@@ -20,8 +20,8 @@
     <div id="streetview-container"></div>
 
     <script>
-      // 2. GPS-KOORDINATER FOR PROSJEKTET (Endre disse til dine nøyaktige koordinater)
-      const prosjektPosisjon = { lat: 58.9700, lng: 5.7300 }; 
+      // 2. OPPDATERTE GPS-KOORDINATER FRA BILDET DITT (Tangen, Randaberg)
+      const prosjektPosisjon = { lat: 59.000383, lng: 5.659569 }; 
 
       let panorama, scene, camera, renderer, modell;
 
@@ -60,4 +60,72 @@
           scene.add(modell);
           animate();
         }, undefined, function (error) {
-          console.error('
+          console.error('Kunne ikke laste 3D-modellen:', error);
+        });
+
+        // 7. Sørg for at 3D-modellen beveger seg synkront når brukeren ser seg rundt i Street View
+        panorama.addListener('pov_changed', () => {
+          updateCameraOrientation();
+        });
+        
+        panorama.addListener('zoom_changed', () => {
+          updateCameraOrientation();
+        });
+      }
+
+      function setupThreeJS() {
+        const container = document.getElementById("streetview-container");
+        scene = new THREE.Scene();
+        
+        // Legger til godt og naturlig lys på modellen
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
+        scene.add(ambientLight);
+        
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.6);
+        directionalLight.position.set(10, 20, 15);
+        scene.add(directionalLight);
+
+        camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 1, 1000);
+        
+        renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.domElement.style.position = 'absolute';
+        renderer.domElement.style.top = '0';
+        renderer.domElement.style.left = '0';
+        renderer.domElement.style.pointerEvents = 'none'; // Gjør at du klikker "igjennom" modellen for å styre Street View
+        container.appendChild(renderer.domElement);
+
+        window.addEventListener('resize', onWindowResize);
+        updateCameraOrientation();
+      }
+
+      function updateCameraOrientation() {
+        if (!panorama || !camera) return;
+        const pov = panorama.getPov();
+        
+        // Konverterer Google-vinkler til 3D-verdenens rotasjon (YXZ-rekkefølge)
+        const headingRad = THREE.MathUtils.degToRad(pov.heading);
+        const pitchRad = THREE.MathUtils.degToRad(pov.pitch);
+
+        camera.rotation.set(pitchRad, -headingRad, 0, 'YXZ');
+        
+        // Synkroniserer zoom/brennvidde mellom Google-kameraet og 3D-modellen
+        camera.fov = 180 / Math.pow(2, panorama.getZoom());
+        camera.updateProjectionMatrix();
+      }
+
+      function onWindowResize() {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+      }
+
+      function animate() {
+        requestAnimationFrame(animate);
+        renderer.render(scene, camera);
+      }
+    </script>
+    
+    <script src="https://maps.googleapis.com/maps/api/js?key=DIN_GOOGLE_API_NØKKEL_HER&callback=initPlatform" async defer></script>
+  </body>
+</html>
