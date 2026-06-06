@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>Tangen 7 - Google Street View</title>
+    <style>
+      html, body, #streetview-container { height: 100%; margin: 0; padding: 0; }
+    </style>
+    <script src="https://unpkg.com/three@0.147.0/build/three.min.js"></script>
+    <script src="https://unpkg.com/three@0.147.0/examples/js/loaders/GLTFLoader.js"></script>
+  </head>
+  <body>
+    <div id="streetview-container"></div>
+
+    <script>
+      // 1. Koordinatene for Tangen 7 (Bytt ut med helt nøyaktige koordinater fra Google Maps senere)
+      const prosjektPosisjon = { lat: 58.9700, lng: 5.7300 }; 
+
+      function initPlatform() {
+        // 2. Start Google Street View på gaten utenfor
+        const panorama = new google.maps.StreetViewPanorama(
+          document.getElementById("streetview-container"), {
+            position: prosjektPosisjon,
+            pov: { heading: 180, pitch: 0 }, // heading: 0 = Nord, 180 = Sør
+            zoom: 1
+          }
+        );
+
+        // 3. Last inn Revit-modellen din
+        const loader = new THREE.GLTFLoader();
+        
+        // Koden leter etter filen du laster opp etterpå
+        loader.load('modell.glb', function (gltf) {
+          const modell = gltf.scene;
+          // Modellen kobles synkront til Google-kameraet her...
+        });
+      }
+    </script>
+    <script src="https://maps.googleapis.com/maps/api/js?key=DIN_API_NØKKEL&callback=initPlatform" async defer></script>
+  </body>
+</html>
