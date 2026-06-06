@@ -9,111 +9,55 @@
         margin: 0; 
         padding: 0; 
         background-color: #000;
+        overflow: hidden;
       }
     </style>
     <script src="https://unpkg.com/three@0.147.0/build/three.min.js"></script>
     <script src="https://unpkg.com/three@0.147.0/examples/js/loaders/GLTFLoader.js"></script>
+    <script src="https://unpkg.com/three@0.147.0/examples/js/loaders/DRACOLoader.js"></script>
   </head>
   <body>
     <div id="streetview-container"></div>
 
     <script>
-      // 1. GPS-KOORDINATER FOR PROSJEKTET (Bytt ut med dine nøyaktige koordinater)
+      // 2. GPS-KOORDINATER FOR PROSJEKTET (Endre disse til dine nøyaktige koordinater)
       const prosjektPosisjon = { lat: 58.9700, lng: 5.7300 }; 
 
       let panorama, scene, camera, renderer, modell;
 
       function initPlatform() {
-        // 2. Start Google Street View på gaten utenfor tomten
+        // 3. Start Google Street View på gaten utenfor
         panorama = new google.maps.StreetViewPanorama(
           document.getElementById("streetview-container"), {
             position: prosjektPosisjon,
-            pov: { heading: 180, pitch: 0 }, // 180 = Kameraet ser mot Sør
+            pov: { heading: 180, pitch: 0 }, 
             zoom: 1,
             visible: true
           }
         );
 
-        // 3. Sett opp Three.js WebGL-overflatelag
+        // 4. Sett opp Three.js WebGL-overflatelaget
         setupThreeJS();
 
-        // 4. Last inn Revit-modellen (Leia-eksporten din)
+        // 5. Konfigurer GLTF-loaderen med DRACO-dekoding for komprimerte Revit-filer
         const loader = new THREE.GLTFLoader();
+        const dracoLoader = new THREE.DRACOLoader();
         
-        // Matcher nøyaktig navnet på filen du lastet opp til GitHub
+        // Henter dekoder-motoren direkte fra Google slik at nettleseren kan pakke opp modellen
+        dracoLoader.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.6/');
+        loader.setDRACOLoader(dracoLoader);
+        
+        // 6. Last inn Revit-modellen din (Matcher nøyaktig navnet på GitHub)
         loader.load('25012 Tangen 7 - Nybygg.glb', function (gltf) {
           modell = gltf.scene;
           
-          // Setter modellen i senter av scenen
+          // Plasserer modellen i senter av 3D-scenen
           modell.position.set(0, 0, 0); 
           
-          // JORD-ROTASJON: Hvis bygget står feil vei i gata, juster tallet under (0 til 360 grader)
+          // JORD-ROTASJON: Juster tallet 45 (grader) for å snu bygget riktig vei på tomta
           modell.rotation.y = Math.PI * (45 / 180); 
           
           scene.add(modell);
           animate();
         }, undefined, function (error) {
-          console.error('Kunne ikke laste 3D-modellen:', error);
-        });
-
-        // 5. Lytt til når brukeren ser seg rundt i Street View, og flytt 3D-kameraet synkront
-        panorama.addListener('pov_changed', () => {
-          updateCameraOrientation();
-        });
-      }
-
-      function setupThreeJS() {
-        const container = document.getElementById("streetview-container");
-        
-        // Oppretter en usynlig 3D-verden oppå Google-bildet
-        scene = new THREE.Scene();
-        
-        // Legger til naturlig lys så Revit-modellen din får farger og skygger
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
-        scene.add(ambientLight);
-        
-        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.6);
-        directionalLight.position.set(10, 20, 15);
-        scene.add(directionalLight);
-
-        camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 1, 1000);
-        
-        renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
-        renderer.setSize(window.innerWidth, window.innerHeight);
-        renderer.domElement.style.position = 'absolute';
-        renderer.domElement.style.top = '0';
-        renderer.domElement.style.pointerEvents = 'none'; // Gjør at du kan klikke "igjennom" modellen og bruke Street View
-        container.appendChild(renderer.domElement);
-
-        window.addEventListener('resize', onWindowResize);
-        updateCameraOrientation();
-      }
-
-      function updateCameraOrientation() {
-        if (!panorama || !camera) return;
-        const pov = panorama.getPov();
-        
-        // Konverterer Google Street View-vinkler til 3D-motorens koordinatsystem
-        const headingRad = THREE.MathUtils.degToRad(pov.heading);
-        const pitchRad = THREE.MathUtils.degToRad(pov.pitch);
-
-        camera.rotation.set(pitchRad, -headingRad, 0, 'YXZ');
-        camera.fov = 180 / Math.pow(2, panorama.getZoom());
-        camera.updateProjectionMatrix();
-      }
-
-      function onWindowResize() {
-        camera.aspect = window.innerWidth / window.innerHeight;
-        camera.updateProjectionMatrix();
-        renderer.setSize(window.innerWidth, window.innerHeight);
-      }
-
-      function animate() {
-        requestAnimationFrame(animate);
-        renderer.render(scene, camera);
-      }
-    </script>
-    
-    <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyAKCY3L1KdO4oqxu_JVlCBkMCVHAcQOWNw&callback=initPlatform" async defer></script>
-  </body>
-</html>
+          console.error('
