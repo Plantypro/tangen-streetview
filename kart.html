@@ -2,7 +2,7 @@
 <html>
   <head>
     <meta charset="utf-8">
-    <title>Tangen 7 - Georeferert Street View</title>
+    <title>Tangen 7 - Høyderegulert Street View</title>
     <style>
       html, body, #streetview-container { 
         height: 100%; 
@@ -23,27 +23,22 @@
       // ==========================================================
       // GEOGRAFISKE DATA FRA REVIT (TANGEN 7)
       // ==========================================================
-      // GPS-koordinat for Aksekryss A / S1 (Hjørnet av bygget ditt) midt på tomta
       const BYGG_GPS = { lat: 59.000300, lng: 5.659350 }; 
       
-      // Siden veien ligger på +2.3m over havet, og kameraet er i øyehøyde (ca 1.6m over veien),
-      // setter vi denne til -3.9m for å plante underbygningen perfekt på asfalten.
-      const BYGG_HØYDE = -3.9; 
+      // SENKET HØYDE: Satt til -12.0 meter for å tvinge bygget solid ned på jorda
+      const BYGG_HØYDE = -12.0; 
       
-      // Sann Nord-rotasjon fra Revit-kompasset ditt (31.75 grader)
       const BYGG_ROTASJON_NORD = 31.75; 
 
-      // Eksakte forskyvninger fra Revit-tegningen din konvertert fra millimeter til meter
+      // Eksakte forskyvninger fra Revit-nullpunktet ditt (i meter)
       const REVIT_OFFSET_X = 251.092; 
-      const REVIT_OFFSET_Y = 100.559; // Dette tilsvarer Z-aksen i Three.js flateplan
+      const REVIT_OFFSET_Y = 100.559; 
 
-      // Startposisjon for Street View-kameraet ute i gata
       const kameraStartGPS = { lat: 59.000383, lng: 5.659569 }; 
 
-      let panorama, scene, camera, renderer, modell, bygningsGruppe;
+      let panorama, scene, camera, renderer, bygningsGruppe;
 
       function initPlatform() {
-        // Start Street View rettet direkte mot plenen (heading: 240)
         panorama = new google.maps.StreetViewPanorama(
           document.getElementById("streetview-container"), {
             position: kameraStartGPS,
@@ -55,44 +50,30 @@
 
         setupThreeJS();
 
-        // Konfigurer GLTF/DRACO-loader
         const loader = new THREE.GLTFLoader();
         const dracoLoader = new THREE.DRACOLoader();
         dracoLoader.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.6/');
         loader.setDRACOLoader(dracoLoader);
         
         loader.load('25012 Tangen 7 - Nybygg.glb', function (gltf) {
-          modell = gltf.scene;
-          
-          // MÅLESTOKK (1:1 meter fra Leia-eksporten)
+          const modell = gltf.scene;
           modell.scale.set(1, 1, 1);
           
-          // ==========================================================
-          // MATEMATISK PLASSERING AV REELLE AVSTANDER FRA TEGNINGEN DIN
-          // ==========================================================
-          // Vi oppretter en ren 3D-gruppe som skal fungere som aksekrysset (A / S1)
           bygningsGruppe = new THREE.Group();
           
-          // Vi forskyver modellen med de nøyaktige meterne slik at hjørnet havner i gruppens (0,0,0)
-          modell.position.x = -REVIT_OFFSET_X;
-          modell.position.y = 0; 
-          modell.position.z = -REVIT_OFFSET_Y; 
-          
-          // Vi legger modellen inn i gruppen vår
+          // 1. NESTING: Vi flytter modellen til 0-punktet FØRST, uten rotasjon involvert
+          modell.position.set(-REVIT_OFFSET_X, 0, -REVIT_OFFSET_Y);
           bygningsGruppe.add(modell);
           
-          // Nå roterer vi hele bygget nøyaktig rundt aksekrysset basert på Sann Nord
+          // 2. ROTASJON: Nå vrir vi gruppen flatt rundt det korrekte hjørneankeret
+          bygningsGruppe.rotation.set(0, 0, 0);
           bygningsGruppe.rotation.y = THREE.MathUtils.degToRad(BYGG_ROTASJON_NORD);
           
           scene.add(bygningsGruppe);
-          console.log("Bygget er koordinert nøyaktig i forhold til aksekryss A / S1!");
+          console.log("Modellen er senket og akserotert flatt.");
           
-          // Setter opp en rød pinne nøyaktig der aksekrysset (hjørnet) skal lande på plenen
           opprettHjelpelinje();
-          
-          // Kjør første geografiske plassering
           oppdaterByggPlassering();
-          
           animate();
         }, undefined, function (error) {
           console.error("Feil under lasting av GLB-fil:", error);
@@ -102,30 +83,26 @@
       function opprettHjelpelinje() {
         const materiale = new THREE.LineBasicMaterial({ color: 0xff0000 });
         const punkter = [];
-        punkter.push(new THREE.Vector3(0, -2, 0));
-        punkter.push(new THREE.Vector3(0, 20, 0)); // Rød siktepinne på aksekrysset
+        punkter.push(new THREE.Vector3(0, -10, 0));
+        punkter.push(new THREE.Vector3(0, 30, 0)); 
         const geometri = new THREE.BufferGeometry().setFromPoints(punkter);
         const linje = new THREE.Line(geometri, materiale);
         scene.add(linje);
       }
 
-      // GEODETISK SYNKRONISERING: Flytter 3D-verdenen stabilt i motsatt retning av der du går
       function oppdaterByggPlassering() {
         if (!panorama || !bygningsGruppe) return;
 
         const kamPos = panorama.getPosition();
-        const kamLat = kamPos.lat();
-        const kamLng = kamPos.lng();
+        const R = 6378137; 
 
-        const R = 6378137; // Jordens radius i meter
-
-        const dLat = THREE.MathUtils.degToRad(BYGG_GPS.lat - kamLat);
-        const dLng = THREE.MathUtils.degToRad(BYGG_GPS.lng - kamLng);
+        const dLat = THREE.MathUtils.degToRad(BYGG_GPS.lat - kamPos.lat());
+        const dLng = THREE.MathUtils.degToRad(BYGG_GPS.lng - kamPos.lng());
 
         const meterNord = dLat * R;
-        const meterØst = dLng * R * Math.cos(THREE.MathUtils.degToRad(kamLat));
+        const meterØst = dLng * R * Math.cos(THREE.MathUtils.degToRad(kamPos.lat()));
 
-        // Låser hele aksekrysset fast i nøyaktig meteravstand fra der du står i veien
+        // Plasserer gruppen stabilt i 3D-scenen
         bygningsGruppe.position.set(meterØst, BYGG_HØYDE, -meterNord);
         
         updateCameraOrientation();
@@ -170,26 +147,6 @@
         const pov = panorama.getPov();
         if (!pov) return;
 
-        const headingRad = THREE.MathUtils.degToRad(pov.heading || 0);
-        const pitchRad = THREE.MathUtils.degToRad(pov.pitch || 0);
-
-        camera.rotation.set(pitchRad, -headingRad, 0, 'YXZ');
+        camera.rotation.set(THREE.MathUtils.degToRad(pov.pitch || 0), -THREE.MathUtils.degToRad(pov.heading || 0), 0, 'YXZ');
         camera.fov = 180 / Math.pow(2, panorama.getZoom() || 1);
         camera.updateProjectionMatrix();
-      }
-
-      function onWindowResize() {
-        camera.aspect = window.innerWidth / window.innerHeight;
-        camera.updateProjectionMatrix();
-        renderer.setSize(window.innerWidth, window.innerHeight);
-      }
-
-      function animate() {
-        requestAnimationFrame(animate);
-        renderer.render(scene, camera);
-      }
-    </script>
-    
-    <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyAKCY3L1KdO4oqxu_JVlCBkMCVHAcQOWNw&callback=initPlatform" async defer></script>
-  </body>
-</html>
