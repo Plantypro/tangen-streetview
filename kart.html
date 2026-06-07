@@ -118,6 +118,15 @@
       }
     </script>
     
-    <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyAKCY3L1KdO4oqxu_JVICbkMCVHAcQOWNw&callback=initPlatform" async defer></script>
+    <script>
+      (function() {
+        const script = document.createElement('script');
+        // Nøkkelen er nøyaktig rekonstruert karakter for karakter fra bilde e60b07
+        script.src = "https://maps.googleapis.com/maps/api/js?key=" + "AIzaSyAKCY3L1KdO4oqxu_JVICbkMCVHAcQOWNw" + "&callback=initPlatform";
+        script.async = true;
+        script.defer = true;
+        document.head.appendChild(script);
+      })();
+    </script>
   </body>
 </html>
