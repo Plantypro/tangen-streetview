@@ -2,7 +2,7 @@
 <html>
   <head>
     <meta charset="utf-8">
-    <title>Tangen 7 - Direkte Kalibrering (5° Rotasjon)</title>
+    <title>Tangen 7 - Endelig Kalibrering</title>
     <style>
       html, body { 
         height: 100%; 
@@ -69,16 +69,16 @@
     <div id="control-panel">
       <div><b>Handling:</b> <span id="txt-status" style="color: #00ffaa;">Klar</span></div>
       <div>|</div>
-      <div><b>Rotasjon:</b> <span id="txt-rot" class="coordinate-box">31.75°</span></div>
+      <div><b>Rotasjon:</b> <span id="txt-rot" class="coordinate-box">-58.25°</span></div>
       <div>|</div>
-      <div><b>Høyde (kote):</b> <span id="txt-høyde" class="coordinate-box">-3.50m</span></div>
+      <div><b>Høyde (kote):</b> <span id="txt-høyde" class="coordinate-box">-6.50m</span></div>
       <div>|</div>
-      <div><b>Tomt Senter:</b> <span id="txt-lat" class="coordinate-box">59.000150, 5.659600</span></div>
+      <div><b>Tomt Senter:</b> <span id="txt-lat" class="coordinate-box">59.000159, 5.660350</span></div>
     </div>
 
     <div id="instructions">
       <b>Tastaturkontroll (Klikk på skjermen først):</b><br>
-      • <b>Piltastene</b> flytter tomt/3D-bygg nøyaktig <b>1.0 meter</b> av gangen (Kartet følger etter!).<br>
+      • <b>Piltastene</b> flytter tomt/3D-bygg nøyaktig <b>1.0 meter</b> av gangen.<br>
       • <b>PageUp / PageDown</b> endrer høyden med nøyaktig <b>10 cm</b> av gangen.<br>
       • Tast <b>R</b> roterer bygget nøyaktig <b>5.0° med klokka</b>.<br>
       • Tast <b>E</b> roterer bygget nøyaktig <b>5.0° mot klokka</b>.
@@ -88,10 +88,12 @@
     <div id="map-container"></div>
 
     <script>
-      let tomtSenterGPS = { lat: 59.000150, lng: 5.659600 }; 
-      let globalHøyde = -3.50; 
-      let gjeldendeRotasjon = 31.75; 
+      // Vi låser startverdiene til dine siste nøyaktige plasseringer fra skjermen din
+      let tomtSenterGPS = { lat: 59.000159, lng: 5.660350 }; 
+      let globalHøyde = -6.50; 
+      let gjeldendeRotasjon = -58.25; 
 
+      // De georefererte meter-offsettene til Aksekryss A / S1 fra Revit
       const REVIT_OFFSET_X = 251.092; 
       const REVIT_OFFSET_Y = 100.559; 
 
@@ -148,6 +150,15 @@
         loader.load('25012 Tangen 7 - Nybygg.glb', function (gltf) {
           modellIntern = gltf.scene;
           modellIntern.scale.set(1, 1, 1);
+          
+          // ==========================================================
+          // ENSIIDIG LØSNING: Tvinger vegger til å tegnes fra BEGGE sider
+          // ==========================================================
+          modellIntern.traverse(function (child) {
+            if (child.isMesh) {
+              child.material.side = THREE.DoubleSide;
+            }
+          });
           
           bygningsGruppe = new THREE.Group();
           modellIntern.position.set(-REVIT_OFFSET_X, 0, -REVIT_OFFSET_Y);
@@ -254,6 +265,7 @@
         }, true); 
       }
 
+      // Setter opp kamerasynkronisering med Google Street View sitt perspektiv
       function setupThreeJS() {
         const container = document.getElementById("streetview-container");
         scene = new THREE.Scene();
@@ -282,24 +294,4 @@
       }
 
       function updateCameraOrientation() {
-        if (!panorama || !camera) return;
-        const pov = panorama.getPov();
-        camera.rotation.set(THREE.MathUtils.degToRad(pov.pitch || 0), -THREE.MathUtils.degToRad(pov.heading || 0), 0, 'YXZ');
-        camera.fov = 180 / Math.pow(2, panorama.getZoom() || 1);
-        camera.updateProjectionMatrix();
-      }
-
-      function onWindowResize() {
-        camera.aspect = (window.innerWidth / 2) / window.innerHeight;
-        camera.updateProjectionMatrix();
-        renderer.setSize(window.innerWidth / 2, window.innerHeight);
-      }
-
-      function animate() {
-        requestAnimationFrame(animate);
-        renderer.render(scene, camera);
-      }
-    </script>
-    <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyAKCY3L1KdO4oqxu_JVlCBkMCVHAcQOWNw&callback=initPlatform" async defer></script>
-  </body>
-</html>
+        if (!panorama || !camera) return
