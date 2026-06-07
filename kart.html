@@ -38,15 +38,14 @@
 
         setupThreeJS();
 
-        // 2. Hjelpe-objekt: Vi setter opp en rød test-kube midt i veien!
-        // Hvis du ser denne røde boksen, betyr det at 3D-motoren fungerer perfekt.
-        const boksGeometri = new THREE.BoxGeometry(2, 2, 2);
-        const boksMateriale = new THREE.MeshBasicMaterial({ color: 0xff0000, wireframe: false });
+        // 2. Vi lager en ENORM rød test-boks (5x5x5 meter) plassert 8 meter foran deg
+        const boksGeometri = new THREE.BoxGeometry(5, 5, 5);
+        const boksMateriale = new THREE.MeshBasicMaterial({ color: 0xff0000, depthTest: true });
         const testBoks = new THREE.Mesh(boksGeometri, boksMateriale);
-        testBoks.position.set(0, 0, -10); // Plassert 10 meter foran kameraet
+        testBoks.position.set(0, 0, -8); 
         scene.add(testBoks);
 
-        // 3. Konfigurer og last inn din Revit/GLB-modell
+        // 3. Konfigurer GLTF/DRACO-loader
         const loader = new THREE.GLTFLoader();
         const dracoLoader = new THREE.DRACOLoader();
         dracoLoader.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.6/');
@@ -55,18 +54,14 @@
         loader.load('25012 Tangen 7 - Nybygg.glb', function (gltf) {
           modell = gltf.scene;
           
-          // SKALERING: Hvis modellen ble bitteliten fra Revit, tvinger vi den opp i størrelse her
-          // (Endre 1,1,1 til f.eks 10,10,10 hvis den er usynlig liten)
-          modell.scale.set(1, 1, 1);
+          // Siden du har "Relocate to 0", tvinger vi den 12 meter frem i gata så den står rett bak boksen
+          modell.position.set(0, 0, -12); 
           
-          // POSISJON: Flytter modellen 15 meter foran kameraet, og løfter den 1.5 meter opp fra asfalten
-          modell.position.set(0, 1.5, -15); 
-          
-          // ROTASJON: Snu modellen (45 grader) på tomta
+          // Juster rotasjon
           modell.rotation.y = Math.PI * (45 / 180); 
           
           scene.add(modell);
-          console.log("3D-modell laster suksessfullt!");
+          console.log("Revit-modellen er lagt til i scenen!");
           animate();
         }, undefined, function (error) {
           console.error('Kunne ikke laste 3D-modellen:', error);
@@ -80,24 +75,28 @@
         const container = document.getElementById("streetview-container");
         scene = new THREE.Scene();
         
-        // Kraftig og godt lys fra alle kanter så modellen ikke blir mørk
-        const ambientLight = new THREE.AmbientLight(0xffffff, 1.5);
+        // Ekstra kraftig belysning
+        const ambientLight = new THREE.AmbientLight(0xffffff, 2.0);
         scene.add(ambientLight);
         
-        const directionalLight = new THREE.DirectionalLight(0xffffff, 1.0);
-        directionalLight.position.set(20, 40, 20);
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 1.5);
+        directionalLight.position.set(10, 50, 15);
         scene.add(directionalLight);
 
+        // Nærgrensen (near) er satt til 0.1 for å hindre at ting rett foran kameraet blir borte
         camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
         
-        // alpha: true gjør 3D-bakgrunnen gjennomsiktig så du ser Street View bak bygget
         renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
-        renderer.setClearColor(0x000000, 0); // Tvinger full gjennomsiktighet
+        renderer.setClearColor(0x000000, 0); // Gjør bakgrunnen 100 % gjennomsiktig
         renderer.setSize(window.innerWidth, window.innerHeight);
+        
+        // KRITISK: Tvinger 3D-laget til å ligge absolutt øverst (z-index: 10) over Google Maps-bildet
         renderer.domElement.style.position = 'absolute';
         renderer.domElement.style.top = '0';
         renderer.domElement.style.left = '0';
+        renderer.domElement.style.zIndex = '10';
         renderer.domElement.style.pointerEvents = 'none'; 
+        
         container.appendChild(renderer.domElement);
 
         window.addEventListener('resize', onWindowResize);
