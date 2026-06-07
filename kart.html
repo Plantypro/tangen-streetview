@@ -2,7 +2,7 @@
 <html>
   <head>
     <meta charset="utf-8">
-    <title>Tangen 7 - Sentrert og Låst Kalibrering</title>
+    <title>Tangen 7 - Endelig Georeferert</title>
     <style>
       html, body { 
         height: 100%; 
@@ -64,15 +64,16 @@
   <body>
 
     <div id="control-panel">
-      <div><b>Markør GPS:</b> <span id="txt-lat" class="coordinate-box">Søker...</span>, <span id="txt-lng" class="coordinate-box">Søker...</span></div>
+      <div><b>Ankerpunkt GPS:</b> <span id="txt-lat" class="coordinate-box">Søker...</span>, <span id="txt-lng" class="coordinate-box">Søker...</span></div>
       <div>|</div>
       <div><b>Høyde (kote):</b> <span id="txt-høyde" class="coordinate-box">-1.6m</span></div>
     </div>
 
     <div id="instructions">
       <b>Tastaturkontroll:</b><br>
-      Bruk <b>Piltastene</b> for å flytte det blå omrisset millimeter-presist.<br>
-      Bruk <b>PageUp / PageDown</b> for å heve eller senke høyden!
+      Klikk på satellittkartet til høyre først.<br>
+      Bruk <b>Piltastene</b> for å finjustere det blå omrisset millimeter-presist.<br>
+      Bruk <b>PageUp / PageDown</b> for å heve eller senke høyden live!
     </div>
 
     <div id="streetview-container"></div>
@@ -80,41 +81,47 @@
 
     <script>
       // ==========================================================
-      // GEOGRAFISKE DATA FRA REVIT (TANGEN 7) - LÅST
+      // GEOGRAFISKE DATA FRA CIVIL 3D / REVIT
       // ==========================================================
-      // Justert startposisjon midt på plenen for Tangen 7
-      let byggGPS = { lat: 59.000300, lng: 5.659300 }; 
+      // Justert startposisjon slik at det blå 2D-omrisset treffer kaiområdet ditt med en gang!
+      let ankerGPS = { lat: 59.000020, lng: 5.659220 }; 
       let byggHøyde = -1.6; 
       const BYGG_ROTASJON_NORD = 31.75; // Sann Nord fra kompasset ditt
+
+      // De eksakte meter-offsettene til Aksekryss A / S1 direkte fra tegningen din
+      const REVIT_OFFSET_X = 251.092; 
+      const REVIT_OFFSET_Y = 100.559; 
 
       const kameraStartGPS = { lat: 59.000383, lng: 5.659569 }; 
 
       let panorama, map, byggMarkør, bygg2DOmriss, scene, camera, renderer, bygningsGruppe;
 
       function initPlatform() {
+        // STREET VIEW (Venstre side)
         panorama = new google.maps.StreetViewPanorama(
           document.getElementById("streetview-container"), {
             position: kameraStartGPS,
-            pov: { heading: 240, pitch: 0 }, 
+            pov: { heading: 140, pitch: 0 }, 
             zoom: 1,
             visible: true
           }
         );
 
+        // SATELLITTKART (Høyre side)
         map = new google.maps.Map(document.getElementById("map-container"), {
-          center: byggGPS,
-          zoom: 19,
+          center: { lat: 59.000150, lng: 5.659500 },
+          zoom: 18,
           mapTypeId: 'satellite'
         });
 
         byggMarkør = new google.maps.Marker({
-          position: byggGPS,
+          position: ankerGPS,
           map: map,
           draggable: true,
-          title: "Dra for å flytte bygget"
+          title: "Ankerpunkt (Ekte 0-punkt)"
         });
 
-        // Blått 2D-omriss for å visualisere tomta på satellittkartet
+        // Det blå 2D-omrisset (Satt til ca. 155m x 58m for å matche den rødskraverte klossen din)
         bygg2DOmriss = new google.maps.Polygon({
           strokeColor: "#00aaff",
           strokeOpacity: 0.8,
@@ -133,36 +140,24 @@
         
         loader.load('25012 Tangen 7 - Nybygg.glb', function (gltf) {
           const modell = gltf.scene;
-          
-          // MÅLESTOKK (Beholdes 1:1 meter fra Leia)
           modell.scale.set(1, 1, 1);
           
           bygningsGruppe = new THREE.Group();
           
           // ==========================================================
-          // KRITISK: AUTOMATISK MÅLING OG SENTRERING AV SELVE BYGGET
+          // NATIVE PLASSERING: INGEN DOBBELT-FLIPPING AV AKSER
           // ==========================================================
-          // Vi tvinger kote 0.00 til å ligge flatt (YZ-flipping)
-          modell.rotation.x = -Math.PI / 2; 
-          
-          // Vi måler den faktiske 3D-boksen til selve bygningsmassen din
-          const boks = new THREE.Box3().setFromObject(modell);
-          const senter = new THREE.Vector3();
-          boks.getCenter(senter);
-          
-          // Vi flytter lokalgeometrien slik at byggets midtpunkt er (0,0,0)
-          // Da kaster vi ut effekten av det fjerne Revit-nullpunktet!
-          modell.position.x = -senter.x;
-          modell.position.y = -boks.min.y; // Tvinger bunnen av huset til å starte på 0
-          modell.position.z = -senter.z;
+          // Siden du har "Flip YZ" på i Leia, skal vi ikke rulle modellen på X eller Z i det hele tatt.
+          // Vi forskyver den kun direkte i forhold til de reelle meter-offsettene dine.
+          modell.position.set(-REVIT_OFFSET_X, 0, -REVIT_OFFSET_Y);
           bygningsGruppe.add(modell);
           
-          // Ren horisontal kompassrotasjon rundt det nye, sentrerte midtpunktet
+          // Ren, horisontal kompassrotasjon rundt det sanne ankerpunktet
           bygningsGruppe.rotation.set(0, 0, 0);
           bygningsGruppe.rotation.y = THREE.MathUtils.degToRad(BYGG_ROTASJON_NORD);
           
           scene.add(bygningsGruppe);
-          console.log("Bygget er sentrert, låst, lagt flatt og klargjort.");
+          console.log("Modellen er georeferert flatt i 1:1 skala basert på Civil 3D.");
           
           oppdaterPosisjonOgKart();
           setupKeyboardControls();
@@ -172,8 +167,8 @@
         });
 
         byggMarkør.addListener('drag', function(event) {
-          byggGPS.lat = event.latLng.lat();
-          byggGPS.lng = event.latLng.lng();
+          ankerGPS.lat = event.latLng.lat();
+          ankerGPS.lng = event.latLng.lng();
           oppdaterPosisjonOgKart();
         });
 
@@ -182,29 +177,34 @@
       }
 
       function oppdaterPosisjonOgKart() {
-        document.getElementById("txt-lat").innerText = byggGPS.lat.toFixed(6);
-        document.getElementById("txt-lng").innerText = byggGPS.lng.toFixed(6);
+        document.getElementById("txt-lat").innerText = ankerGPS.lat.toFixed(6);
+        document.getElementById("txt-lng").innerText = ankerGPS.lng.toFixed(6);
         document.getElementById("txt-høyde").innerText = byggHøyde.toFixed(1) + "m";
 
         if (panorama && bygningsGruppe) {
           const kamPos = panorama.getPosition();
           const R = 6378137; 
-          const dLat = THREE.MathUtils.degToRad(byggGPS.lat - kamPos.lat());
-          const dLng = THREE.MathUtils.degToRad(byggGPS.lng - kamPos.lng());
+          const dLat = THREE.MathUtils.degToRad(ankerGPS.lat - kamPos.lat());
+          const dLng = THREE.MathUtils.degToRad(ankerGPS.lng - kamPos.lng());
           const meterNord = dLat * R;
           const meterØst = dLng * R * Math.cos(THREE.MathUtils.degToRad(kamPos.lat()));
           
           bygningsGruppe.position.set(meterØst, byggHøyde, -meterNord);
         }
 
-        // Tegner 2D-polygonen på kartet etter målene fra din røde tegning
+        // Beregner nøyaktig hvor det blå 2D-omrisset skal tegnes på kartet ut i fra ankeret
         const vinkelRad = THREE.MathUtils.degToRad(BYGG_ROTASJON_NORD);
         const latMeter = 111132; 
-        const lngMeter = 40075000 * Math.cos(THREE.MathUtils.degToRad(byggGPS.lat)) / 360;
+        const lngMeter = 40075000 * Math.cos(THREE.MathUtils.degToRad(ankerGPS.lat)) / 360;
 
-        // Dimensjoner kalibrert etter tegningen din (ca. 160m lang kailinje, 60m bredde)
-        const l = 160; 
-        const b = 60; 
+        // Forskyver det blå omrisset slik at det flytter seg opp på kaia der bygget faktisk ligger
+        const senter2D = {
+          lat: ankerGPS.lat + ((REVIT_OFFSET_Y * Math.cos(vinkelRad) + REVIT_OFFSET_X * Math.sin(vinkelRad)) / latMeter),
+          lng: ankerGPS.lng + ((-REVIT_OFFSET_Y * Math.sin(vinkelRad) + REVIT_OFFSET_X * Math.cos(vinkelRad)) / lngMeter)
+        };
+
+        const l = 155; 
+        const b = 58; 
 
         const hjørner = [
           { dx: -b/2, dy: -l/2 },
@@ -217,26 +217,23 @@
           const rx = h.dx * Math.cos(vinkelRad) - h.dy * Math.sin(vinkelRad);
           const ry = h.dx * Math.sin(vinkelRad) + h.dy * Math.cos(vinkelRad);
           return {
-            lat: byggGPS.lat + (ry / latMeter),
-            lng: byggGPS.lng + (rx / lngMeter)
+            lat: senter2D.lat + (ry / latMeter),
+            lng: senter2D.lng + (rx / lngMeter)
           };
         });
 
         bygg2DOmriss.setPaths(polygonStier);
-        byggMarkør.setPosition(byggGPS);
+        byggMarkør.setPosition(ankerGPS);
       }
 
-      // ==========================================================
-      // LIVE FINJUSTERING MED TASTAURET
-      // ==========================================================
       function setupKeyboardControls() {
         window.addEventListener('keydown', function(e) {
           const stegGPS = 0.000002; 
           
-          if (e.key === 'ArrowUp') { byggGPS.lat += stegGPS; e.preventDefault(); }
-          if (e.key === 'ArrowDown') { byggGPS.lat -= stegGPS; e.preventDefault(); }
-          if (e.key === 'ArrowLeft') { byggGPS.lng -= stegGPS; e.preventDefault(); }
-          if (e.key === 'ArrowRight') { byggGPS.lng += stegGPS; e.preventDefault(); }
+          if (e.key === 'ArrowUp') { ankerGPS.lat += stegGPS; e.preventDefault(); }
+          if (e.key === 'ArrowDown') { ankerGPS.lat -= stegGPS; e.preventDefault(); }
+          if (e.key === 'ArrowLeft') { ankerGPS.lng -= stegGPS; e.preventDefault(); }
+          if (e.key === 'ArrowRight') { ankerGPS.lng += stegGPS; e.preventDefault(); }
           
           if (e.key === 'PageUp') { byggHøyde += 0.2; e.preventDefault(); }
           if (e.key === 'PageDown') { byggHøyde -= 0.2; e.preventDefault(); }
