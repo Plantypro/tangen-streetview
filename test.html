@@ -11,7 +11,6 @@
         background-color: #000;
         overflow: hidden;
       }
-      /* Sørger for at både Street View og 3D-scenen fyller hele skjermen perfekt */
       #streetview-container, gmp-street-view-panorama {
         position: absolute;
         top: 0;
@@ -35,6 +34,7 @@
       <gmp-street-view-panorama 
         id="panorama"
         position="59.000383, 5.659569" 
+        sources="DEFAULT"
         heading="180" 
         pitch="0" 
         zoom="1">
@@ -45,10 +45,9 @@
       let scene, camera, renderer, modell, panoramaElement;
 
       async function initPlatform() {
-        // Henter tak i det nye Google-elementet
         panoramaElement = document.getElementById("panorama");
 
-        // Sett opp Three.js WebGL-overflatelaget
+        // Sett opp Three.js overflatelaget
         setupThreeJS();
 
         // Konfigurer GLTF-loaderen med DRACO-dekoding for Revit-filen din
@@ -57,11 +56,13 @@
         dracoLoader.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.6/');
         loader.setDRACOLoader(dracoLoader);
         
-        // Last inn Revit-modellen
+        // Last inn Revit-modellen din
         loader.load('25012 Tangen 7 - Nybygg.glb', function (gltf) {
           modell = gltf.scene;
-          modell.position.set(0, 0, 0); 
-          modell.rotation.y = Math.PI * (45 / 180); // Juster tallet 45 for å rotere huset på tomta
+          
+          // Hever modellen litt (0.5 meter) i tilfelle den havnet under asfalten i scenen
+          modell.position.set(0, 0.5, 0); 
+          modell.rotation.y = Math.PI * (45 / 180); 
           
           scene.add(modell);
           animate();
@@ -69,7 +70,7 @@
           console.error('Kunne ikke laste 3D-modellen:', error);
         });
 
-        // Synkroniserer 3D-kameraet med Google med en gang brukeren ser seg rundt
+        // Synkroniserer endringer i kameraet
         panoramaElement.addEventListener('gmp-povchanged', () => {
           updateCameraOrientation();
         });
@@ -83,11 +84,11 @@
         const container = document.getElementById("streetview-container");
         scene = new THREE.Scene();
         
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.9);
         scene.add(ambientLight);
         
-        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.6);
-        directionalLight.position.set(10, 20, 15);
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.7);
+        directionalLight.position.set(10, 25, 15);
         scene.add(directionalLight);
 
         camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 1, 1000);
@@ -102,14 +103,13 @@
 
         window.addEventListener('resize', onWindowResize);
         
-        // Kjører en første synkronisering av kameraet
-        setTimeout(updateCameraOrientation, 500);
+        // Kjører en oppdatering etter at kartet har rukket å starte opp skikkelig
+        setTimeout(updateCameraOrientation, 800);
       }
 
       function updateCameraOrientation() {
         if (!panoramaElement || !camera) return;
         
-        // Henter de nye, presise vinklene direkte fra den nye Google-komponenten
         const heading = panoramaElement.heading || 180;
         const pitch = panoramaElement.pitch || 0;
         const zoom = panoramaElement.zoom || 1;
