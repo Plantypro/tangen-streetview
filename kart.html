@@ -23,10 +23,13 @@
       // ==========================================================
       // GEOGRAFISKE DATA FOR PLASSERING PÅ TOMT
       // ==========================================================
-      // Justert GPS for å flytte bygget nøyaktig inn på gresset på Tangen 7
       const BYGG_GPS = { lat: 59.000340, lng: 5.659320 }; 
-      const BYGG_HØYDE = -1.5; // Juster opp/ned for å fininnstille grunnmuren mot terrenget
-      const BYGG_ROTASJON_NORD = 31.75; // Sann Nord-rotasjon fra Revit-kompasset ditt
+      
+      // GLOBALT HØYDENIVÅ: Satt til -5.0 meter for å tvinge modellen godt ned på asfalten
+      const BYGG_HØYDE = -5.0; 
+      
+      // Sann Nord-rotasjon fra Revit-kompasset ditt
+      const BYGG_ROTASJON_NORD = 31.75; 
 
       // Startposisjon for Street View-kameraet ute i gata
       const kameraStartGPS = { lat: 59.000383, lng: 5.659569 }; 
@@ -55,32 +58,32 @@
         loader.load('25012 Tangen 7 - Nybygg.glb', function (gltf) {
           modell = gltf.scene;
           
-          // MÅLESTOKK (1:1 meter siden Leia er satt til Meters)
+          // MÅLESTOKK (1:1 meter fra Leia)
           modell.scale.set(1, 1, 1);
           
           // ==========================================================
-          // ENRUNDT ROTASJON: VI REISER BYGGET OPP PÅ BEINA
+          // AKSE-KORRIGERING: INGEN HELLING ELLER FLIPPING PÅ SIDEN
           // ==========================================================
-          // Siden "Flip YZ" var av, ruller vi den 90 grader på X for å få taket opp
-          modell.rotation.x = -Math.PI / 2; 
-          
-          // Snyr bygget rundt sin nye vertikale akse (Y) basert på kompasset ditt
-          modell.rotation.y = THREE.MathUtils.degToRad(BYGG_ROTASJON_NORD);
+          // Vi setter X og Z-rotasjon til 0 så bygget ligger helt flatt
+          modell.rotation.x = 0; 
           modell.rotation.z = 0;
+          
+          // Snyr bygget kun rundt sin egen vertikale akse (Y)
+          modell.rotation.y = THREE.MathUtils.degToRad(BYGG_ROTASJON_NORD);
 
-          // Sentrerer geometrien lokalt basert på den nye oppreiste formen
+          // Sentrerer geometrien lokalt i (0,0,0) basert på den flate formen
           const boks = new THREE.Box3().setFromObject(modell);
           const senter = new THREE.Vector3();
           boks.getCenter(senter);
           
           modell.position.x = -senter.x;
-          modell.position.y = -boks.min.y; // Tvinger laveste punkt (grunnmuren) til å starte på 0
+          modell.position.y = -boks.min.y; // Tvinger bunnen av geometrien til å starte på 0
           modell.position.z = -senter.z;
           
           scene.add(modell);
-          console.log("Modellen er rettet opp fra YZ-kræsj, bunnutjevnet og klar.");
+          console.log("Modellen er lagt helt flat, bunnutjevnet og klar.");
           
-          // Den røde pinnen blir stående for å vise senterpunktet
+          // Den røde pinnen beholdes for å verifisere posisjonen
           opprettHjelpelinje();
           
           // Aktiver geografisk plassering
@@ -101,7 +104,7 @@
         const materiale = new THREE.LineBasicMaterial({ color: 0xff0000 });
         const punkter = [];
         punkter.push(new THREE.Vector3(0, -2, 0));
-        punkter.push(new THREE.Vector3(0, 15, 0)); 
+        punkter.push(new THREE.Vector3(0, 20, 0)); 
         const geometri = new THREE.BufferGeometry().setFromPoints(punkter);
         const linje = new THREE.Line(geometri, materiale);
         scene.add(linje);
@@ -122,7 +125,7 @@
         const meterNord = dLat * R;
         const meterØst = dLng * R * Math.cos(THREE.MathUtils.degToRad(kamLat));
 
-        // Plasserer hele 3D-scenen i riktig meteravstand
+        // Plasserer hele 3D-scenen geografisk i riktig meteravstand
         scene.position.set(meterØst, BYGG_HØYDE, -meterNord);
         
         updateCameraOrientation();
