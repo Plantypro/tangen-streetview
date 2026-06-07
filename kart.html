@@ -2,14 +2,51 @@
 <html>
   <head>
     <meta charset="utf-8">
-    <title>Tangen 7 - Testøkt i Origo</title>
+    <title>Tangen 7 - Splittet Kalibrering</title>
     <style>
-      html, body, #streetview-container { 
+      html, body { 
         height: 100%; 
         margin: 0; 
         padding: 0; 
         background-color: #000;
-        overflow: hidden;
+        font-family: sans-serif;
+      }
+      /* Splitter skjermen i to like store deler */
+      #streetview-container {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 50%;
+        height: 100%;
+      }
+      #map-container {
+        position: absolute;
+        right: 0;
+        top: 0;
+        width: 50%;
+        height: 100%;
+        border-left: 3px solid #333;
+      }
+      /* Kontrollpanel øverst på skjermen for live-avlesning */
+      #control-panel {
+        position: absolute;
+        top: 10px;
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 999;
+        background: rgba(0, 0, 0, 0.85);
+        color: #fff;
+        padding: 12px 20px;
+        border-radius: 8px;
+        box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+        font-size: 13px;
+        display: flex;
+        gap: 15px;
+        pointer-events: auto;
+      }
+      .coordinate-box {
+        font-family: monospace;
+        color: #00ffcc;
       }
     </style>
     <script src="https://unpkg.com/three@0.147.0/build/three.min.js"></script>
@@ -17,37 +54,60 @@
     <script src="https://unpkg.com/three@0.147.0/examples/js/loaders/DRACOLoader.js"></script>
   </head>
   <body>
+
+    <div id="control-panel">
+      <div><b>Bygg GPS:</b> <span id="txt-lat" class="coordinate-box">Søker...</span>, <span id="txt-lng" class="coordinate-box">Søker...</span></div>
+      <div>|</div>
+      <div><b>Høyde (kote):</b> <span id="txt-høyde" class="coordinate-box">-1.6m</span></div>
+    </div>
+
     <div id="streetview-container"></div>
+    <div id="map-container"></div>
 
     <script>
       // ==========================================================
-      // TESTKOORDINATER: KAMERAET STARTER NÅ DIREKTE I REVIT-0-PUNKTET
+      // STARTPOSISJON: SAMKJØRT MED REVIT-0-PUNKTET DITT
       // ==========================================================
-      // Dette tilsvarer E 307995.6, N 6544604.4 fra tegningen din
-      const REVIT_ORIGO_GPS = { lat: 59.000732, lng: 5.659102 }; 
-
-      // Høydejustering: Siden vi står i 0-punktet, setter vi denne til -1.6 meter
-      // slik at modellens kote 0.00 ligger i plan med asfalten under linsa.
-      const BYGG_HØYDE = -1.6; 
-
-      // Sann Nord-rotasjon fra Revit
+      // Dette tilsvarer E 307995.6, N 6544604.4 fra Revit-tegningen din
+      let byggGPS = { lat: 59.000732, lng: 5.659102 }; 
+      let byggHøyde = -1.6; 
       const BYGG_ROTASJON_NORD = 31.75; 
 
-      let panorama, scene, camera, renderer, bygningsGruppe;
+      // Avstand fra Revit-origo til bygningskroppen (i meter)
+      const REVIT_OFFSET_X = 251.092; 
+      const REVIT_OFFSET_Y = 100.559; 
+
+      let panorama, map, byggMarkør, scene, camera, renderer, bygningsGruppe;
 
       function initPlatform() {
-        // Starter kameraet i det absolutte nullpunktet og ser rundt oss (heading: 0)
+        // 1. START STREET VIEW (Venstre side)
         panorama = new google.maps.StreetViewPanorama(
           document.getElementById("streetview-container"), {
-            position: REVIT_ORIGO_GPS,
-            pov: { heading: 0, pitch: 0 }, 
+            position: byggGPS,
+            pov: { heading: 180, pitch: 0 }, 
             zoom: 1,
             visible: true
           }
         );
 
+        // 2. START 2D SATELLITTKART (Høyre side - nøyaktig som bildet ditt)
+        map = new google.maps.Map(document.getElementById("map-container"), {
+          center: byggGPS,
+          zoom: 19,
+          mapTypeId: 'satellite'
+        });
+
+        // Legger til en rød, flyttbar Google-knappenål i 2D-kartet
+        byggMarkør = new google.maps.Marker({
+          position: byggGPS,
+          map: map,
+          draggable: true, // Gjør at du kan dra bygget rundt med musa på satellittkartet!
+          title: "Revit 0-punkt (Aksekryss A / S1)"
+        });
+
         setupThreeJS();
 
+        // Konfigurer GLTF-loader for Revit-bygget
         const loader = new THREE.GLTFLoader();
         const dracoLoader = new THREE.DRACOLoader();
         dracoLoader.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.6/');
@@ -59,41 +119,58 @@
           
           bygningsGruppe = new THREE.Group();
           
-          // Siden vi står i ekte origo, lar vi modellens posisjon være helt urørt (0,0,0).
-          // Da vil vi se nøyaktig hvordan Leia-eksporten har plassert geometrien.
-          modell.position.set(0, 0, 0);
+          // Kompenserer for avstanden fra det fjerne Revit-nullpunktet
+          modell.position.set(-REVIT_OFFSET_X, 0, -REVIT_OFFSET_Y);
           bygningsGruppe.add(modell);
           
-          // Vrir modellen basert på Sann Nord
+          // Setter Sann Nord-rotasjon flatt på terrenget
           bygningsGruppe.rotation.set(0, 0, 0);
           bygningsGruppe.rotation.y = THREE.MathUtils.degToRad(BYGG_ROTASJON_NORD);
           
-          // Setter gruppen direkte under kameraet vårt
-          bygningsGruppe.position.set(0, BYGG_HØYDE, 0);
-          
           scene.add(bygningsGruppe);
-          console.log("Kameraet og modellens 0-punkt er nå samkjørt i samme posisjon!");
           
-          opprettHjelpelinje();
+          // Oppdater panelet med de første tallene
+          oppdaterLivePaneler();
+          oppdater3DPlassering();
+          
           animate();
-        }, undefined, function (error) {
-          console.error("Feil under lasting av GLB-fil:", error);
         });
 
-        // Oppdaterer linsa når du snur deg i gata
+        // ==========================================================
+        // LIVE-TUNING: HVA SKJER NÅR DU DRAR MARKØREN I SATELLITTKARTET
+        // ==========================================================
+        byggMarkør.addListener('drag', function(event) {
+          byggGPS.lat = event.latLng.lat();
+          byggGPS.lng = event.latLng.lng();
+          
+          oppdaterLivePaneler();
+          oppdater3DPlassering();
+        });
+
+        // Synkroniserer 3D-kameraet når du ser deg rundt i gata
         panorama.addListener('pov_changed', () => updateCameraOrientation());
         panorama.addListener('zoom_changed', () => updateCameraOrientation());
       }
 
-      function opprettHjelpelinje() {
-        // Tegner en loddrett rød strek i det absolutte nullpunktet (der du står)
-        const materiale = new THREE.LineBasicMaterial({ color: 0xff0000 });
-        const punkter = [];
-        punkter.push(new THREE.Vector3(0, -5, 0));
-        punkter.push(new THREE.Vector3(0, 20, 0)); 
-        const geometri = new THREE.BufferGeometry().setFromPoints(punkter);
-        const linje = new THREE.Line(geometri, materiale);
-        scene.add(linje);
+      function oppdaterLivePaneler() {
+        document.getElementById("txt-lat").innerText = byggGPS.lat.toFixed(6);
+        document.getElementById("txt-lng").innerText = byggGPS.lng.toFixed(6);
+      }
+
+      function oppdater3DPlassering() {
+        if (!panorama || !bygningsGruppe) return;
+
+        const kamPos = panorama.getPosition();
+        const R = 6378137; 
+
+        const dLat = THREE.MathUtils.degToRad(byggGPS.lat - kamPos.lat());
+        const dLng = THREE.MathUtils.degToRad(byggGPS.lng - kamPos.lng());
+
+        const meterNord = dLat * R;
+        const meterØst = dLng * R * Math.cos(THREE.MathUtils.degToRad(kamPos.lat()));
+
+        // Flytter 3D-modellen i gata synkront med der du drar knappenålen på satellittkartet!
+        bygningsGruppe.position.set(meterØst, byggHøyde, -meterNord);
       }
 
       function setupThreeJS() {
@@ -107,11 +184,11 @@
         directionalLight.position.set(30, 60, 30);
         scene.add(directionalLight);
 
-        camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 5000);
+        camera = new THREE.PerspectiveCamera(45, window.innerWidth / 2 / window.innerHeight, 0.1, 5000);
         
         renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
         renderer.setClearColor(0x000000, 0); 
-        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setSize(window.innerWidth / 2, window.innerHeight);
         
         renderer.domElement.style.position = 'absolute';
         renderer.domElement.style.top = '0';
@@ -127,17 +204,15 @@
       function updateCameraOrientation() {
         if (!panorama || !camera) return;
         const pov = panorama.getPov();
-        if (!pov) return;
-
         camera.rotation.set(THREE.MathUtils.degToRad(pov.pitch || 0), -THREE.MathUtils.degToRad(pov.heading || 0), 0, 'YXZ');
         camera.fov = 180 / Math.pow(2, panorama.getZoom() || 1);
         camera.updateProjectionMatrix();
       }
 
       function onWindowResize() {
-        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.aspect = (window.innerWidth / 2) / window.innerHeight;
         camera.updateProjectionMatrix();
-        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setSize(window.innerWidth / 2, window.innerHeight);
       }
 
       function animate() {
