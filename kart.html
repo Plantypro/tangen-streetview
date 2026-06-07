@@ -2,7 +2,7 @@
 <html>
   <head>
     <meta charset="utf-8">
-    <title>Tangen 7 - Georeferert Kalibrering</title>
+    <title>Tangen 7 - Presisjonskalibrering</title>
     <style>
       html, body { 
         height: 100%; 
@@ -67,31 +67,28 @@
   <body>
 
     <div id="control-panel">
-      <div><b>Modell Status:</b> <span id="txt-status" style="color: #00ffaa;">Suksess!</span></div>
+      <div><b>Siste handling:</b> <span id="txt-status" style="color: #00ffaa;">Klar</span></div>
       <div>|</div>
-      <div><b>Ekte Origo GPS:</b> <span id="txt-lat" class="coordinate-box">59.000120</span>, <span id="txt-lng" class="coordinate-box">5.659350</span></div>
+      <div><b>Høyde (kote):</b> <span id="txt-høyde" class="coordinate-box">-3.50m</span></div>
       <div>|</div>
-      <div><b>Høyde (kote):</b> <span id="txt-høyde" class="coordinate-box">-3.5m</span></div>
+      <div><b>Anker GPS:</b> <span id="txt-lat" class="coordinate-box">59.000080</span>, <span id="txt-lng" class="coordinate-box">5.659320</span></div>
     </div>
 
     <div id="instructions">
-      <b>Slik finner og flytter du bygget:</b><br>
-      1. Klikk med musa på satellittkartet til høyre først.<br>
-      2. Bruk <b>Piltastene</b> på tastaturet for å flytte bygget i gata.<br>
-      3. Bruk <b>PageUp / PageDown</b> for å heve eller senke høyden live.<br>
-      <i>Snu deg rundt i Street View og se etter den røde hjelpelinjen!</i>
+      <b>Låst tastaturkontroll (Ingen taster må holdes inne):</b><br>
+      • Klikk hvor som helst på skjermen.<br>
+      • <b>Piltastene</b> flytter modellen med nøyaktig <b>1.0 meter</b> av gangen.<br>
+      • <b>PageUp / PageDown</b> endrer høyden med nøyaktig <b>10 cm</b> av gangen.
     </div>
 
     <div id="streetview-container"></div>
     <div id="map-container"></div>
 
     <script>
-      // Sentrerte startkoordinater nær kaikanten
       let origoGPS = { lat: 59.000080, lng: 5.659320 }; 
-      let globalHøyde = -3.5; 
+      let globalHøyde = -3.50; 
       const CIVIL3D_ROTASJON_NORD = 31.75; 
 
-      // De eksakte meter-offsettene fra Civil 3D-tegningen din
       const REVIT_OFFSET_X = 251.092; 
       const REVIT_OFFSET_Y = 100.559; 
 
@@ -104,16 +101,6 @@
         const x = lng * Math.PI / 180 * R_JORDA;
         const y = Math.log(Math.tan((90 + lat) * Math.PI / 360)) * R_JORDA;
         return { x: x, y: y };
-      }
-
-      function utmTilMeter(east, north) {
-        const lngOrigo = 9.0; 
-        const meterOrigo = gpsTilMeter(0.0, lngOrigo);
-        const skremsfaktor = 1 / Math.cos(59.0003 * Math.PI / 180);
-        return { 
-          x: (east - 500000) * skremsfaktor + meterOrigo.x, 
-          y: north * skremsfaktor 
-        };
       }
 
       function initPlatform() {
@@ -160,12 +147,9 @@
           modell.scale.set(1, 1, 1);
           
           bygningsGruppe = new THREE.Group();
-          
-          // REN NATIVE RETNING: Ingen helling på X eller Z siden eksporten er ren
           modell.rotation.set(0, 0, 0);
           bygningsGruppe.add(modell);
           
-          // Sann Nord-rotasjon rundt vertikal akse
           bygningsGruppe.rotation.set(0, 0, 0);
           bygningsGruppe.rotation.y = THREE.MathUtils.degToRad(CIVIL3D_ROTASJON_NORD);
           
@@ -180,6 +164,7 @@
         origoMarkør.addListener('drag', function(event) {
           origoGPS.lat = event.latLng.lat();
           origoGPS.lng = event.latLng.lng();
+          document.getElementById("txt-status").innerText = "Drar markør via kart";
           oppdaterGeometriPosisjon();
         });
 
@@ -187,7 +172,6 @@
         panorama.addListener('zoom_changed', () => updateCameraOrientation());
       }
 
-      // Lager en 100 meter høy rød stolpe i modellens midtpunkt så du ser hvor den er!
       function opprettHjelpelinje() {
         const materiale = new THREE.LineBasicMaterial({ color: 0xff0000, linewidth: 4 });
         const punkter = [];
@@ -201,7 +185,7 @@
       function oppdaterGeometriPosisjon() {
         document.getElementById("txt-lat").innerText = origoGPS.lat.toFixed(6);
         document.getElementById("txt-lng").innerText = origoGPS.lng.toFixed(6);
-        document.getElementById("txt-høyde").innerText = globalHøyde.toFixed(1) + "m";
+        document.getElementById("txt-høyde").innerText = globalHøyde.toFixed(2) + "m";
 
         if (panorama && bygningsGruppe) {
           const kamPos = panorama.getPosition();
@@ -246,20 +230,56 @@
         origoMarkør.setPosition(origoGPS);
       }
 
+      // ==========================================================
+      // STRIDSKLAR TASTASTURSTYRING: 1 METER OG 10 CM
+      // ==========================================================
       function setupKeyboardControls() {
+        // Vi tvinger lytteren til å overvåke hele vinduet (window) uansett hvor Google har fokus
         window.addEventListener('keydown', function(e) {
-          const stegGPS = 0.000003; // Mikro-skritt for finjustering
+          // Matematisk omregning fra meter til GPS-grader basert på Tangen 7 sin breddegrad
+          const enMeterILat = 1.0 / 111132;
+          const enMeterILng = 1.0 / (40075000 * Math.cos(THREE.MathUtils.degToRad(origoGPS.lat)) / 360);
           
-          if (e.key === 'ArrowUp') { origoGPS.lat += stegGPS; e.preventDefault(); }
-          if (e.key === 'ArrowDown') { origoGPS.lat -= stegGPS; e.preventDefault(); }
-          if (e.key === 'ArrowLeft') { origoGPS.lng -= stegGPS; e.preventDefault(); }
-          if (e.key === 'ArrowRight') { origoGPS.lng += stegGPS; e.preventDefault(); }
-          
-          if (e.key === 'PageUp') { globalHøyde += 0.2; e.preventDefault(); }
-          if (e.key === 'PageDown') { globalHøyde -= 0.2; e.preventDefault(); }
+          let loggTekst = "";
 
-          oppdaterGeometriPosisjon();
-        });
+          if (e.key === 'ArrowUp') { 
+            origoGPS.lat += enMeterILat; 
+            loggTekst = "Flyttet 1 meter Nord";
+            e.preventDefault(); 
+          }
+          if (e.key === 'ArrowDown') { 
+            origoGPS.lat -= enMeterILat; 
+            loggTekst = "Flyttet 1 meter Sør";
+            e.preventDefault(); 
+          }
+          if (e.key === 'ArrowLeft') { 
+            origoGPS.lng -= enMeterILng; 
+            loggTekst = "Flyttet 1 meter Vest";
+            e.preventDefault(); 
+          }
+          if (e.key === 'ArrowRight') { 
+            origoGPS.lng += enMeterILng; 
+            loggTekst = "Flyttet 1 meter Øst";
+            e.preventDefault(); 
+          }
+          
+          // Heving og senking med nøyaktig 10 cm (0.10 meter)
+          if (e.key === 'PageUp') { 
+            globalHøyde += 0.10; 
+            loggTekst = "Hevet 10 cm";
+            e.preventDefault(); 
+          }
+          if (e.key === 'PageDown') { 
+            globalHøyde -= 0.10; 
+            loggTekst = "Senket 10 cm";
+            e.preventDefault(); 
+          }
+
+          if (loggTekst !== "") {
+            document.getElementById("txt-status").innerText = loggTekst;
+            oppdaterGeometriPosisjon();
+          }
+        }, true); // 'true' gjør at koden fanger opp trykket før Google Street View rekker å stjele det
       }
 
       function setupThreeJS() {
