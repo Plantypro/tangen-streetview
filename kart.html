@@ -2,7 +2,7 @@
 <html>
   <head>
     <meta charset="utf-8">
-    <title>Tangen 7 - Splittet Kalibrering</title>
+    <title>Tangen 7 - Interaktiv 2D/3D Kalibrering</title>
     <style>
       html, body { 
         height: 100%; 
@@ -11,7 +11,6 @@
         background-color: #000;
         font-family: sans-serif;
       }
-      /* Splitter skjermen i to like store deler */
       #streetview-container {
         position: absolute;
         left: 0;
@@ -27,14 +26,13 @@
         height: 100%;
         border-left: 3px solid #333;
       }
-      /* Kontrollpanel øverst på skjermen for live-avlesning */
       #control-panel {
         position: absolute;
         top: 10px;
         left: 50%;
         transform: translateX(-50%);
         z-index: 999;
-        background: rgba(0, 0, 0, 0.85);
+        background: rgba(0, 0, 0, 0.9);
         color: #fff;
         padding: 12px 20px;
         border-radius: 8px;
@@ -42,7 +40,6 @@
         font-size: 13px;
         display: flex;
         gap: 15px;
-        pointer-events: auto;
       }
       .coordinate-box {
         font-family: monospace;
@@ -56,7 +53,7 @@
   <body>
 
     <div id="control-panel">
-      <div><b>Bygg GPS:</b> <span id="txt-lat" class="coordinate-box">Søker...</span>, <span id="txt-lng" class="coordinate-box">Søker...</span></div>
+      <div><b>Markør GPS:</b> <span id="txt-lat" class="coordinate-box">Søker...</span>, <span id="txt-lng" class="coordinate-box">Søker...</span></div>
       <div>|</div>
       <div><b>Høyde (kote):</b> <span id="txt-høyde" class="coordinate-box">-1.6m</span></div>
     </div>
@@ -65,49 +62,58 @@
     <div id="map-container"></div>
 
     <script>
-      // ==========================================================
-      // STARTPOSISJON: SAMKJØRT MED REVIT-0-PUNKTET DITT
-      // ==========================================================
-      // Dette tilsvarer E 307995.6, N 6544604.4 fra Revit-tegningen din
-      let byggGPS = { lat: 59.000732, lng: 5.659102 }; 
+      // Startposisjon satt i nærheten av gressplenen på Tangen 7
+      let byggGPS = { lat: 59.000300, lng: 5.659300 }; 
       let byggHøyde = -1.6; 
       const BYGG_ROTASJON_NORD = 31.75; 
 
-      // Avstand fra Revit-origo til bygningskroppen (i meter)
+      // De eksakte Revit-offsettene dine (i meter)
       const REVIT_OFFSET_X = 251.092; 
       const REVIT_OFFSET_Y = 100.559; 
 
-      let panorama, map, byggMarkør, scene, camera, renderer, bygningsGruppe;
+      let panorama, map, byggMarkør, bygg2DOmriss, scene, camera, renderer, bygningsGruppe;
 
       function initPlatform() {
         // 1. START STREET VIEW (Venstre side)
         panorama = new google.maps.StreetViewPanorama(
           document.getElementById("streetview-container"), {
-            position: byggGPS,
-            pov: { heading: 180, pitch: 0 }, 
+            position: { lat: 59.000383, lng: 5.659569 },
+            pov: { heading: 240, pitch: 0 }, 
             zoom: 1,
             visible: true
           }
         );
 
-        // 2. START 2D SATELLITTKART (Høyre side - nøyaktig som bildet ditt)
+        // 2. START SATELLITTKART (Høyre side)
         map = new google.maps.Map(document.getElementById("map-container"), {
           center: byggGPS,
           zoom: 19,
           mapTypeId: 'satellite'
         });
 
-        // Legger til en rød, flyttbar Google-knappenål i 2D-kartet
+        // Sentral flyttbar markør
         byggMarkør = new google.maps.Marker({
           position: byggGPS,
           map: map,
-          draggable: true, // Gjør at du kan dra bygget rundt med musa på satellittkartet!
-          title: "Revit 0-punkt (Aksekryss A / S1)"
+          draggable: true,
+          title: "Flytt for å posisjonere bygget"
+        });
+
+        // ==========================================================
+        // TEGNER EN BLÅ POLYGON SOM REPRODUSERER BYGGET PÅ SATELLITTKARTET
+        // ==========================================================
+        // Vi lager en boks (f.eks. 40x25 meter) som representerer byggets fotavtrykk på kartet
+        bygg2DOmriss = new google.maps.Polygon({
+          strokeColor: "#00aaff",
+          strokeOpacity: 0.8,
+          strokeWeight: 3,
+          fillColor: "#00aaff",
+          fillOpacity: 0.35,
+          map: map
         });
 
         setupThreeJS();
 
-        // Konfigurer GLTF-loader for Revit-bygget
         const loader = new THREE.GLTFLoader();
         const dracoLoader = new THREE.DRACOLoader();
         dracoLoader.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.6/');
@@ -119,58 +125,78 @@
           
           bygningsGruppe = new THREE.Group();
           
-          // Kompenserer for avstanden fra det fjerne Revit-nullpunktet
+          // TVINGER MODELLEN FLAT: Vi overstyrer den gale hellingen som skjedde i Three.js
           modell.position.set(-REVIT_OFFSET_X, 0, -REVIT_OFFSET_Y);
           bygningsGruppe.add(modell);
           
-          // Setter Sann Nord-rotasjon flatt på terrenget
+          // Ren, horisontal rotasjon rundt Y-aksen basert på kompasset
           bygningsGruppe.rotation.set(0, 0, 0);
           bygningsGruppe.rotation.y = THREE.MathUtils.degToRad(BYGG_ROTASJON_NORD);
           
           scene.add(bygningsGruppe);
           
-          // Oppdater panelet med de første tallene
-          oppdaterLivePaneler();
-          oppdater3DPlassering();
-          
+          // Kjør oppdatering
+          oppdaterPosisjonOgKart();
           animate();
         });
 
-        // ==========================================================
-        // LIVE-TUNING: HVA SKJER NÅR DU DRAR MARKØREN I SATELLITTKARTET
-        // ==========================================================
+        // Håndterer bevegelse av den røde nåla
         byggMarkør.addListener('drag', function(event) {
           byggGPS.lat = event.latLng.lat();
           byggGPS.lng = event.latLng.lng();
-          
-          oppdaterLivePaneler();
-          oppdater3DPlassering();
+          oppdaterPosisjonOgKart();
         });
 
-        // Synkroniserer 3D-kameraet når du ser deg rundt i gata
         panorama.addListener('pov_changed', () => updateCameraOrientation());
         panorama.addListener('zoom_changed', () => updateCameraOrientation());
       }
 
-      function oppdaterLivePaneler() {
+      // FUNKSJON SOM OPPDATERER BÅDE 3D-MODELLEN OG DET BLÅ 2D-OMRISSET SAMTIDIG
+      function oppdaterPosisjonOgKart() {
         document.getElementById("txt-lat").innerText = byggGPS.lat.toFixed(6);
         document.getElementById("txt-lng").innerText = byggGPS.lng.toFixed(6);
-      }
 
-      function oppdater3DPlassering() {
-        if (!panorama || !bygningsGruppe) return;
+        // 1. Oppdater 3D-modellen i Street View
+        if (panorama && bygningsGruppe) {
+          const kamPos = panorama.getPosition();
+          const R = 6378137; 
+          const dLat = THREE.MathUtils.degToRad(byggGPS.lat - kamPos.lat());
+          const dLng = THREE.MathUtils.degToRad(byggGPS.lng - kamPos.lng());
+          const meterNord = dLat * R;
+          const meterØst = dLng * R * Math.cos(THREE.MathUtils.degToRad(kamPos.lat()));
+          
+          bygningsGruppe.position.set(meterØst, byggHøyde, -meterNord);
+        }
 
-        const kamPos = panorama.getPosition();
-        const R = 6378137; 
+        // 2. Oppdater det blå 2D-omrisset på satellittkartet
+        // Vi regner ut fire hjørner rundt den røde markøren i forhold til Sann Nord (31.75 grader)
+        const vinkelRad = THREE.MathUtils.degToRad(BYGG_ROTASJON_NORD);
+        const latMeter = 111132; 
+        const lngMeter = 40075000 * Math.cos(THREE.MathUtils.degToRad(byggGPS.lat)) / 360;
 
-        const dLat = THREE.MathUtils.degToRad(byggGPS.lat - kamPos.lat());
-        const dLng = THREE.MathUtils.degToRad(byggGPS.lng - kamPos.lng());
+        // Definerer størrelsen på bygget i meter på 2D-kartet (f.eks 45m langt, 25m bredt)
+        const l = 45; 
+        const b = 25; 
 
-        const meterNord = dLat * R;
-        const meterØst = dLng * R * Math.cos(THREE.MathUtils.degToRad(kamPos.lat()));
+        const hjørner = [
+          { dx: -b/2, dy: -l/2 },
+          { dx: b/2, dy: -l/2 },
+          { dx: b/2, dy: l/2 },
+          { dx: -b/2, dy: l/2 }
+        ];
 
-        // Flytter 3D-modellen i gata synkront med der du drar knappenålen på satellittkartet!
-        bygningsGruppe.position.set(meterØst, byggHøyde, -meterNord);
+        const polygonStier = hjørner.map(h => {
+          // Roterer hjørnene i forhold til kompassretningen
+          const rx = h.dx * Math.cos(vinkelRad) - h.dy * Math.sin(vinkelRad);
+          const ry = h.dx * Math.sin(vinkelRad) + h.dy * Math.cos(vinkelRad);
+          
+          return {
+            lat: byggGPS.lat + (ry / latMeter),
+            lng: byggGPS.lng + (rx / lngMeter)
+          };
+        });
+
+        bygg2DOmriss.setPaths(polygonStier);
       }
 
       function setupThreeJS() {
@@ -197,7 +223,6 @@
         renderer.domElement.style.pointerEvents = 'none'; 
         
         container.appendChild(renderer.domElement);
-
         window.addEventListener('resize', onWindowResize);
       }
 
@@ -220,7 +245,6 @@
         renderer.render(scene, camera);
       }
     </script>
-    
     <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyAKCY3L1KdO4oqxu_JVlCBkMCVHAcQOWNw&callback=initPlatform" async defer></script>
   </body>
 </html>
