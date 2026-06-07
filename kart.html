@@ -23,9 +23,10 @@
       // ==========================================================
       // GEOGRAFISKE DATA FOR PLASSERING PÅ TOMT
       // ==========================================================
-      const BYGG_GPS = { lat: 59.000450, lng: 5.659350 }; // Senterpunktet for tomta di
-      const BYGG_ROTASJON_NORD = 31.75; // Sann Nord fra Revit-kompasset ditt
-      const BYGG_HØYDE = -1.5; // Juster denne opp/ned for å treffe asfalten perfekt
+      // Justert koordinatene for å flytte bygget mer presist inn på tomtegrensen
+      const BYGG_GPS = { lat: 59.000350, lng: 5.659220 }; 
+      const BYGG_ROTASJON_NORD = 31.75; // Sann Nord fra Revit
+      const BYGG_HØYDE = -1.0; // Juster opp/ned (f.eks -0.5, -2.0) for å treffe asfalten
 
       // Startposisjon for Street View-kameraet ute i gata
       const kameraStartGPS = { lat: 59.000383, lng: 5.659569 }; 
@@ -54,27 +55,29 @@
         loader.load('25012 Tangen 7 - Nybygg.glb', function (gltf) {
           modell = gltf.scene;
           
-          // 2. MÅLESTOKK (1:1 siden Leia eksporterer i meter)
+          // MÅLESTOKK (1:1 meter fra Leia)
           modell.scale.set(1, 1, 1);
           
-          // 3. AUTOMATISK NULLSTILLING AV KARTKOORDINATER
-          // Vi finner yttergrensene til hele Revit-modellen din
+          // AUTOMATISK SENTRERING AV KARTKOORDINATER
           const boks = new THREE.Box3().setFromObject(modell);
           const senter = new THREE.Vector3();
           boks.getCenter(senter);
           
-          // Subtraherer senterpunktet fra geometrien. 
-          // Dette tvinger bygget ned fra himmelen og plasserer det nøyaktig i (0,0,0) internt.
           modell.position.x = -senter.x;
-          modell.position.y = -boks.min.y; // Setter laveste punkt på huset til 0
+          modell.position.y = -boks.min.y; 
           modell.position.z = -senter.z;
           
-          // 4. ROTASJON (Anvender Sann Nord på det sentrerte bygget)
-          modell.rotation.x = 0;
+          // ==========================================================
+          // ROTASJONSKORRIGERING (Fikser opp-ned og himmelretning)
+          // ==========================================================
+          // Tvinger modellen rundt 180 grader på X-aksen for å snu den rett vei på beina!
+          modell.rotation.x = Math.PI; 
+          
+          // Setter Sann Nord-vinkelen din på Y-aksen
           modell.rotation.y = THREE.MathUtils.degToRad(BYGG_ROTASJON_NORD); 
           
           scene.add(modell);
-          console.log("Modellen er hentet ned fra himmelen, sentrert og skalert 1:1.");
+          console.log("Modellen er snudd rett vei, sentrert og skalert 1:1.");
           
           // Aktiver geografisk plassering
           oppdaterByggPlassering();
@@ -105,7 +108,7 @@
         const meterNord = dLat * R;
         const meterØst = dLng * R * Math.cos(THREE.MathUtils.degToRad(kamLat));
 
-        // Plasserer 3D-scenen i riktig meteravstand basert på GPS
+        // Plasserer 3D-scenen geografisk i forhold til gata
         scene.position.set(meterØst, BYGG_HØYDE, -meterNord);
         
         updateCameraOrientation();
