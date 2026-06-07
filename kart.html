@@ -21,16 +21,12 @@
 
     <script>
       // ==========================================================
-      // EKTE DATA FRA REVIT (TANGEN 7)
+      // GEOGRAFISKE DATA FOR PLASSERING PÅ TOMT
       // ==========================================================
-      // Justert GPS for å plassere bygget midt på plenen på Tangen 7
-      const BYGG_GPS = { lat: 59.000320, lng: 5.659300 }; 
-      
-      // Siden veien ligger på +2.3m og kameraet er i hodehøyde, justerer vi det globale 3D-nivået her:
-      const BYGG_HØYDE = -2.3; 
-      
-      // Sann Nord-rotasjon fra Revit-kompasset ditt
-      const BYGG_ROTASJON_NORD = 31.75; 
+      // Justert GPS for å flytte bygget nøyaktig inn på gresset på Tangen 7
+      const BYGG_GPS = { lat: 59.000340, lng: 5.659320 }; 
+      const BYGG_HØYDE = -1.5; // Juster opp/ned for å fininnstille grunnmuren mot terrenget
+      const BYGG_ROTASJON_NORD = 31.75; // Sann Nord-rotasjon fra Revit-kompasset ditt
 
       // Startposisjon for Street View-kameraet ute i gata
       const kameraStartGPS = { lat: 59.000383, lng: 5.659569 }; 
@@ -59,30 +55,32 @@
         loader.load('25012 Tangen 7 - Nybygg.glb', function (gltf) {
           modell = gltf.scene;
           
-          // MÅLESTOKK (1:1 meter fra Leia)
+          // MÅLESTOKK (1:1 meter siden Leia er satt til Meters)
           modell.scale.set(1, 1, 1);
           
-          // AUTOMATISK INTERN SENTRERING (Uten akse-flipping)
+          // ==========================================================
+          // ENRUNDT ROTASJON: VI REISER BYGGET OPP PÅ BEINA
+          // ==========================================================
+          // Siden "Flip YZ" var av, ruller vi den 90 grader på X for å få taket opp
+          modell.rotation.x = -Math.PI / 2; 
+          
+          // Snyr bygget rundt sin nye vertikale akse (Y) basert på kompasset ditt
+          modell.rotation.y = THREE.MathUtils.degToRad(BYGG_ROTASJON_NORD);
+          modell.rotation.z = 0;
+
+          // Sentrerer geometrien lokalt basert på den nye oppreiste formen
           const boks = new THREE.Box3().setFromObject(modell);
           const senter = new THREE.Vector3();
           boks.getCenter(senter);
           
-          // Vi flytter kun X og Z til midtpunktet, og beholder den ekte Revit-høyden (Y) intakt fra filen!
           modell.position.x = -senter.x;
-          modell.position.y = 0; // Bruker den ekte havnivå-baserte høyden fra filen din
+          modell.position.y = -boks.min.y; // Tvinger laveste punkt (grunnmuren) til å starte på 0
           modell.position.z = -senter.z;
           
-          // ==========================================================
-          // NULLSTILLER ROTASJON (Lar den stå flatt slik den gjorde i GLTF-vieweren)
-          // ==========================================================
-          modell.rotation.x = 0; 
-          modell.rotation.z = 0;
-          modell.rotation.y = THREE.MathUtils.degToRad(BYGG_ROTASJON_NORD); 
-          
           scene.add(modell);
-          console.log("Modellen er låst til ekte havnivåhøyde og Sann Nord.");
+          console.log("Modellen er rettet opp fra YZ-kræsj, bunnutjevnet og klar.");
           
-          // Den røde pinnen beholdes for å markere senter
+          // Den røde pinnen blir stående for å vise senterpunktet
           opprettHjelpelinje();
           
           // Aktiver geografisk plassering
@@ -102,7 +100,7 @@
       function opprettHjelpelinje() {
         const materiale = new THREE.LineBasicMaterial({ color: 0xff0000 });
         const punkter = [];
-        punkter.push(new THREE.Vector3(0, -5, 0));
+        punkter.push(new THREE.Vector3(0, -2, 0));
         punkter.push(new THREE.Vector3(0, 15, 0)); 
         const geometri = new THREE.BufferGeometry().setFromPoints(punkter);
         const linje = new THREE.Line(geometri, materiale);
@@ -124,7 +122,7 @@
         const meterNord = dLat * R;
         const meterØst = dLng * R * Math.cos(THREE.MathUtils.degToRad(kamLat));
 
-        // Plasserer hele scenegruppen i riktig meteravstand
+        // Plasserer hele 3D-scenen i riktig meteravstand
         scene.position.set(meterØst, BYGG_HØYDE, -meterNord);
         
         updateCameraOrientation();
