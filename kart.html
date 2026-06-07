@@ -2,7 +2,7 @@
 <html>
   <head>
     <meta charset="utf-8">
-    <title>Tangen 7 - Google Street View</title>
+    <title>Tangen 7 - Georeferert Street View</title>
     <style>
       html, body, #streetview-container { 
         height: 100%; 
@@ -20,8 +20,15 @@
     <div id="streetview-container"></div>
 
     <script>
-      // GPS-KOORDINATER FOR TANGEN, RANDABERG
-      const prosjektPosisjon = { lat: 59.000383, lng: 5.659569 }; 
+      // ==========================================================
+      // GEOGRAFISKE KOORDINATER FOR BYGGET (TANGEN 7)
+      // ==========================================================
+      const BYGG_GPS = { lat: 59.000450, lng: 5.659350 }; // Eksakt GPS-punkt på tomta der huset skal stå
+      const BYGG_HØYDE = -1.2; // Manuell høydejustering i meter (juster opp/ned for å treffe terrenget)
+      const BYGG_ROTASJON_NORD = 45; // Sann Nord-rotasjon fra Revit (i grader)
+      
+      // Startposisjon for Street View-kameraet (i gata utenfor)
+      const kameraStartGPS = { lat: 59.000383, lng: 5.659569 }; 
 
       let panorama, scene, camera, renderer, modell;
 
@@ -29,8 +36,8 @@
         // Start Street View
         panorama = new google.maps.StreetViewPanorama(
           document.getElementById("streetview-container"), {
-            position: prosjektPosisjon,
-            pov: { heading: 180, pitch: 0 }, 
+            position: kameraStartGPS,
+            pov: { heading: 300, pitch: 0 }, // Snyr kameraet mot tomta ved start
             zoom: 1,
             visible: true
           }
@@ -38,7 +45,7 @@
 
         setupThreeJS();
 
-        // 2. Konfigurer GLTF/DRACO-loader for å hente den nye eksporten din
+        // Konfigurer GLTF/DRACO-loader
         const loader = new THREE.GLTFLoader();
         const dracoLoader = new THREE.DRACOLoader();
         dracoLoader.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.6/');
@@ -47,43 +54,75 @@
         loader.load('25012 Tangen 7 - Nybygg.glb', function (gltf) {
           modell = gltf.scene;
           
-          // INTELLIGENT BOKS-BREGNING: Vi tvinger modellen opp på bakken
+          // Senterer geometrien til (0,0,0) internt som sikkerhet
           const boks = new THREE.Box3().setFromObject(modell);
           const senter = new THREE.Vector3();
           boks.getCenter(senter);
-          
-          // Nullstiller eventuelle skjevheter eller etasjehøyder fra Revit-eksporten
           modell.position.x += (modell.position.x - senter.x);
-          modell.position.y += (modell.position.y - boks.min.y); // Tvinger bunnen av huset til å være på 0 (asfalten)
+          modell.position.y += (modell.position.y - boks.min.y); 
           modell.position.z += (modell.position.z - senter.z);
           
-          // POSISJONERING: Plasserer huset 18 meter foran deg i gata, og hever det 0.5 meter for margin
-          modell.position.set(0, 0.5, -18); 
-          
-          // JORD-ROTASJON: Juster dette tallet (akkurat nå 45 grader) for å vri huset riktig vei på tomta
-          modell.rotation.y = Math.PI * (45 / 180); 
+          // Setter Sann Nord-rotasjon
+          modell.rotation.y = Math.PI * (BYGG_ROTASJON_NORD / 180); 
           
           scene.add(modell);
-          console.log("Revit-modellen er plassert og bunnutjevnet!");
+          
+          // Kjør første geografiske plassering
+          oppdaterByggPlassering();
+          
           animate();
-        }, undefined, function (error) {
-          console.error('Kunne ikke laste 3D-modellen:', error);
         });
 
-        panorama.addListener('pov_changed', () => updateCameraOrientation());
-        panorama.addListener('zoom_changed', () => updateCameraOrientation());
+        // ==========================================================
+        // EVENT LISTENERS: TRIGGER NÅR BRUKEREN GÅR ELLER SER SEG RUNDT
+        // ==========================================================
+        panorama.addListener('position_changed', () => {
+          oppdaterByggPlassering(); // Regner ut ny avstand fordi du har flyttet deg i gata!
+        });
+
+        panorama.addListener('pov_changed', () => {
+          updateCameraOrientation();
+        });
+        
+        panorama.addListener('zoom_changed', () => {
+          updateCameraOrientation();
+        });
+      }
+
+      // MATHEMATISK GEODETISK FORMEL: Regner ut meteravstand fra GPS-koordinater
+      function oppdaterByggPlassering() {
+        if (!panorama || !modell) return;
+
+        const kamPos = panorama.getPosition();
+        const kamLat = kamPos.lat();
+        const kamLng = kamPos.lng();
+
+        // Jordens radius i meter
+        const R = 6378137; 
+
+        // Regner ut avstand i meter langs X (Øst/Vest) og Z (Nord/Sør) akser
+        const dLat = THREE.MathUtils.degToRad(BYGG_GPS.lat - kamLat);
+        const dLng = THREE.MathUtils.degToRad(BYGG_GPS.lng - kamLng);
+
+        const meterNord = dLat * R;
+        const meterØst = dLng * R * Math.cos(THREE.MathUtils.degToRad(kamLat));
+
+        // Three.js koordinatsystem: X = Øst(+), Y = Opp(+), Z = Sør(+)
+        // Siden Nord er minus i Three.js, snur vi fortegnet på meterNord
+        modell.position.set(meterØst, BYGG_HØYDE, -meterNord);
+        
+        updateCameraOrientation();
       }
 
       function setupThreeJS() {
         const container = document.getElementById("streetview-container");
         scene = new THREE.Scene();
         
-        // Godt og jevnt dagslys på bygningskroppen
         const ambientLight = new THREE.AmbientLight(0xffffff, 2.0);
         scene.add(ambientLight);
         
         const directionalLight = new THREE.DirectionalLight(0xffffff, 1.5);
-        directionalLight.position.set(20, 50, 20);
+        directionalLight.position.set(30, 60, 30);
         scene.add(directionalLight);
 
         camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
@@ -101,7 +140,6 @@
         container.appendChild(renderer.domElement);
 
         window.addEventListener('resize', onWindowResize);
-        setTimeout(updateCameraOrientation, 500);
       }
 
       function updateCameraOrientation() {
