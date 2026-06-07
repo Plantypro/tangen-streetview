@@ -24,16 +24,16 @@
       // GEOGRAFISKE KOORDINATER FOR BYGGET (TANGEN 7)
       // ==========================================================
       const BYGG_GPS = { lat: 59.000450, lng: 5.659350 }; 
-      const BYGG_HØYDE = -1.5; // Juster opp/ned for å treffe asfalten perfekt
-      const BYGG_ROTASJON_NORD = 45; // Finjustering av retningen (i grader) på tomta
+      const BYGG_HØYDE = -1.0; // Meter over/under asfalten
+      const BYGG_ROTASJON_NORD = 0; // Start på 0 grader, juster her for å snu bygget på tomta
       
-      // Startposisjon for Street View-kameraet (i gata utenfor)
+      // Startposisjon for Street View-kameraet
       const kameraStartGPS = { lat: 59.000383, lng: 5.659569 }; 
 
       let panorama, scene, camera, renderer, modell;
 
       function initPlatform() {
-        // Start Street View (Snyr kameraet mot gressplenen der nybygget skal stå)
+        // Start Street View mot tomta
         panorama = new google.maps.StreetViewPanorama(
           document.getElementById("streetview-container"), {
             position: kameraStartGPS,
@@ -54,26 +54,31 @@
         loader.load('25012 Tangen 7 - Nybygg.glb', function (gltf) {
           modell = gltf.scene;
           
-          // Senterer geometrien til (0,0,0) internt som sikkerhet
+          // 2. FINN MODELLENS EKTE DIMENSJONER
           const boks = new THREE.Box3().setFromObject(modell);
           const senter = new THREE.Vector3();
+          const storrelse = new THREE.Vector3();
           boks.getCenter(senter);
-          modell.position.x += (modell.position.x - senter.x);
-          modell.position.y += (modell.position.y - boks.min.y); 
-          modell.position.z += (modell.position.z - senter.z);
+          boks.getSize(storrelse);
           
-          // ==========================================================
-          // AKSE-KORRIGERING (Fikser 90 graders feilen fra Revit/Leia)
-          // ==========================================================
-          // Snyr modellen 90 grader rundt X-aksen for å reise den opp på beina
-          modell.rotation.x = Math.PI * (90 / 180); 
+          // 3. SKALERINGSKORREKSJON (Tvinger modellen til å bli f.eks. 25 meter bred i realiteten)
+          // Hvis modellen har strukket seg ut over flere hundre meter, tvinger vi den ned her:
+          const ønsketBreddeMeter = 25.0; 
+          const skaleringsFaktor = ønsketBreddeMeter / Math.max(storrelse.x, storrelse.z);
+          modell.scale.set(skaleringsFaktor, skaleringsFaktor, skaleringsFaktor);
           
-          // Legger til den ordinære tomterotasjonen på Y-aksen
+          // 4. SENTERKORREKSJON (Drer modellen inn til origo basert på den nye skalaen)
+          modell.position.x += (modell.position.x - senter.x) * skaleringsFaktor;
+          modell.position.y += (modell.position.y - boks.min.y) * skaleringsFaktor; 
+          modell.position.z += (modell.position.z - senter.z) * skaleringsFaktor;
+          
+          // 5. ROTASJON (Vi fjerner X-rotasjonen helt siden filen allerede sto oppreist)
+          modell.rotation.x = 0;
           modell.rotation.y = Math.PI * (BYGG_ROTASJON_NORD / 180); 
           
           scene.add(modell);
           
-          // Plasser geografisk
+          // Oppdater geografisk posisjon i kartet
           oppdaterByggPlassering();
           
           animate();
@@ -81,18 +86,9 @@
           console.error("Feil under lasting av GLB-fil:", error);
         });
 
-        // Event listeners for posisjonsendringer
-        panorama.addListener('position_changed', () => {
-          oppdaterByggPlassering(); 
-        });
-
-        panorama.addListener('pov_changed', () => {
-          updateCameraOrientation();
-        });
-        
-        panorama.addListener('zoom_changed', () => {
-          updateCameraOrientation();
-        });
+        panorama.addListener('position_changed', () => oppdaterByggPlassering());
+        panorama.addListener('pov_changed', () => updateCameraOrientation());
+        panorama.addListener('zoom_changed', () => updateCameraOrientation());
       }
 
       function oppdaterByggPlassering() {
@@ -110,9 +106,7 @@
         const meterNord = dLat * R;
         const meterØst = dLng * R * Math.cos(THREE.MathUtils.degToRad(kamLat));
 
-        // Plasserer i Three.js koordinatsystem
         modell.position.set(meterØst, BYGG_HØYDE, -meterNord);
-        
         updateCameraOrientation();
       }
 
@@ -120,7 +114,6 @@
         const container = document.getElementById("streetview-container");
         scene = new THREE.Scene();
         
-        // Kraftig lyssetting for å lyse opp alle flater etter rotasjonen
         const ambientLight = new THREE.AmbientLight(0xffffff, 2.5);
         scene.add(ambientLight);
         
