@@ -23,9 +23,9 @@
       // ==========================================================
       // GEOGRAFISKE KOORDINATER FOR BYGGET (TANGEN 7)
       // ==========================================================
-      const BYGG_GPS = { lat: 59.000450, lng: 5.659350 }; // Eksakt GPS-punkt på tomta der huset skal stå
-      const BYGG_HØYDE = -1.2; // Manuell høydejustering i meter (juster opp/ned for å treffe terrenget)
-      const BYGG_ROTASJON_NORD = 45; // Sann Nord-rotasjon fra Revit (i grader)
+      const BYGG_GPS = { lat: 59.000450, lng: 5.659350 }; 
+      const BYGG_HØYDE = -1.5; // Juster opp/ned for å treffe asfalten perfekt
+      const BYGG_ROTASJON_NORD = 45; // Finjustering av retningen (i grader) på tomta
       
       // Startposisjon for Street View-kameraet (i gata utenfor)
       const kameraStartGPS = { lat: 59.000383, lng: 5.659569 }; 
@@ -33,11 +33,11 @@
       let panorama, scene, camera, renderer, modell;
 
       function initPlatform() {
-        // Start Street View
+        // Start Street View (Snyr kameraet mot gressplenen der nybygget skal stå)
         panorama = new google.maps.StreetViewPanorama(
           document.getElementById("streetview-container"), {
             position: kameraStartGPS,
-            pov: { heading: 300, pitch: 0 }, // Snyr kameraet mot tomta ved start
+            pov: { heading: 240, pitch: 0 }, 
             zoom: 1,
             visible: true
           }
@@ -62,22 +62,28 @@
           modell.position.y += (modell.position.y - boks.min.y); 
           modell.position.z += (modell.position.z - senter.z);
           
-          // Setter Sann Nord-rotasjon
+          // ==========================================================
+          // AKSE-KORRIGERING (Fikser 90 graders feilen fra Revit/Leia)
+          // ==========================================================
+          // Snyr modellen 90 grader rundt X-aksen for å reise den opp på beina
+          modell.rotation.x = Math.PI * (90 / 180); 
+          
+          // Legger til den ordinære tomterotasjonen på Y-aksen
           modell.rotation.y = Math.PI * (BYGG_ROTASJON_NORD / 180); 
           
           scene.add(modell);
           
-          // Kjør første geografiske plassering
+          // Plasser geografisk
           oppdaterByggPlassering();
           
           animate();
+        }, undefined, function (error) {
+          console.error("Feil under lasting av GLB-fil:", error);
         });
 
-        // ==========================================================
-        // EVENT LISTENERS: TRIGGER NÅR BRUKEREN GÅR ELLER SER SEG RUNDT
-        // ==========================================================
+        // Event listeners for posisjonsendringer
         panorama.addListener('position_changed', () => {
-          oppdaterByggPlassering(); // Regner ut ny avstand fordi du har flyttet deg i gata!
+          oppdaterByggPlassering(); 
         });
 
         panorama.addListener('pov_changed', () => {
@@ -89,7 +95,6 @@
         });
       }
 
-      // MATHEMATISK GEODETISK FORMEL: Regner ut meteravstand fra GPS-koordinater
       function oppdaterByggPlassering() {
         if (!panorama || !modell) return;
 
@@ -97,18 +102,15 @@
         const kamLat = kamPos.lat();
         const kamLng = kamPos.lng();
 
-        // Jordens radius i meter
         const R = 6378137; 
 
-        // Regner ut avstand i meter langs X (Øst/Vest) og Z (Nord/Sør) akser
         const dLat = THREE.MathUtils.degToRad(BYGG_GPS.lat - kamLat);
         const dLng = THREE.MathUtils.degToRad(BYGG_GPS.lng - kamLng);
 
         const meterNord = dLat * R;
         const meterØst = dLng * R * Math.cos(THREE.MathUtils.degToRad(kamLat));
 
-        // Three.js koordinatsystem: X = Øst(+), Y = Opp(+), Z = Sør(+)
-        // Siden Nord er minus i Three.js, snur vi fortegnet på meterNord
+        // Plasserer i Three.js koordinatsystem
         modell.position.set(meterØst, BYGG_HØYDE, -meterNord);
         
         updateCameraOrientation();
@@ -118,7 +120,8 @@
         const container = document.getElementById("streetview-container");
         scene = new THREE.Scene();
         
-        const ambientLight = new THREE.AmbientLight(0xffffff, 2.0);
+        // Kraftig lyssetting for å lyse opp alle flater etter rotasjonen
+        const ambientLight = new THREE.AmbientLight(0xffffff, 2.5);
         scene.add(ambientLight);
         
         const directionalLight = new THREE.DirectionalLight(0xffffff, 1.5);
