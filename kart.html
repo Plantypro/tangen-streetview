@@ -64,15 +64,16 @@
   <body>
 
     <div id="control-panel">
-      <div><b>Civil 3D Origo:</b> <span id="txt-lat" class="coordinate-box">58.997800</span>, <span id="txt-lng" class="coordinate-box">5.657300</span></div>
+      <div><b>Ekte Origo GPS:</b> <span id="txt-lat" class="coordinate-box">59.000120</span>, <span id="txt-lng" class="coordinate-box">5.659350</span></div>
       <div>|</div>
-      <div><b>Forskyvning Høyde:</b> <span id="txt-høyde" class="coordinate-box">-4.2m</span></div>
+      <div><b>Forskyvning Høyde:</b> <span id="txt-høyde" class="coordinate-box">-6.0m</span></div>
     </div>
 
     <div id="instructions">
-      <b>Finjustering:</b><br>
-      Bruk <b>Piltastene</b> for å flytte bygget horisontalt.<br>
-      Bruk <b>PageUp / PageDown</b> for å heve eller senke koteplanet live!
+      <b>Finjustering av tomta:</b><br>
+      1. Klikk på satellittkartet til høyre.<br>
+      2. Bruk <b>Piltastene</b> for å flytte det blå omrisset millimeter-presist.<br>
+      3. Bruk <b>PageUp / PageDown</b> for å heve eller senke koteplanet live i Street View!
     </div>
 
     <div id="streetview-container"></div>
@@ -80,53 +81,48 @@
 
     <script>
       // ==========================================================
-      // INPUT DATA FRA CIVIL 3D & REVIT
+      // KALIBRERTE STARTVERDIER (FLYTTET SØR-ØST FOR Å TREFFE TOMTA)
       // ==========================================================
-      // De eksakte koordinatene fra den geografiske markøren din
-      let origoGPS = { lat: 58.997800, lng: 5.657300 }; 
-      
-      // Siden markøren har kote 0.00 (havnivå), justerer vi for veien og kameraets øyehøyde
-      let globalHøyde = -4.2; 
-      
-      // Sann Nord-rotasjon fra prosjektet
+      let origoGPS = { lat: 59.000120, lng: 5.659350 }; 
+      let globalHøyde = -6.0; 
       const BYGG_ROTASJON_NORD = 31.75; 
 
       // De eksakte meter-offsettene til Aksekryss A / S1 fra nullpunktet
       const REVIT_OFFSET_X = 251.092; 
       const REVIT_OFFSET_Y = 100.559; 
 
-      // Startposisjon for Street View ute i gata der du vil se modellen fra
+      // Startposisjon for Street View ute i gata
       const kameraStartGPS = { lat: 59.000383, lng: 5.659569 }; 
 
       let panorama, map, origoMarkør, bygg2DOmriss, scene, camera, renderer, bygningsGruppe;
 
       function initPlatform() {
-        // STREET VIEW (Venstre side) - Starter i veien og ser mot tomta (heading: 240)
+        // STREET VIEW (Venstre side)
         panorama = new google.maps.StreetViewPanorama(
           document.getElementById("streetview-container"), {
             position: kameraStartGPS,
-            pov: { heading: 240, pitch: 0 }, 
+            pov: { heading: 140, pitch: -5 }, 
             zoom: 1,
             visible: true
           }
         );
 
-        // SATELLITTKART (Høyre side) - Sentrert over kaikanten
+        // SATELLITTKART (Høyre side)
         map = new google.maps.Map(document.getElementById("map-container"), {
-          center: { lat: 59.000200, lng: 5.659400 },
-          zoom: 18,
+          center: { lat: 59.000150, lng: 5.659500 },
+          zoom: 19,
           mapTypeId: 'satellite'
         });
 
-        // Plasserer markøren nøyaktig der det blå/røde krysset i Civil 3D ligger
+        // Plasserer markøren i det kalibrerte ankerpunktet
         origoMarkør = new google.maps.Marker({
           position: origoGPS,
           map: map,
           draggable: true,
-          title: "Civil 3D Geographic Marker"
+          title: "Ankerpunkt"
         });
 
-        // Blått 2D-omriss for å visualisere bygget på satellittkartet
+        // Det store blå 2D-omrisset (ca. 155m x 58m for å matche rød tegning)
         bygg2DOmriss = new google.maps.Polygon({
           strokeColor: "#00aaff",
           strokeOpacity: 0.8,
@@ -149,23 +145,21 @@
           
           bygningsGruppe = new THREE.Group();
           
-          // 1. NESTING: Vi flytter modellen i forhold til det ekte markør-origoet
+          // Nesting av modellen i forhold til det georefererte origoet
           modell.position.set(-REVIT_OFFSET_X, 0, -REVIT_OFFSET_Y);
           bygningsGruppe.add(modell);
           
-          // 2. ABSOLUTT FLATING: Låser rotasjonen helt vannrett langs bakken
+          // Ren flat rotasjon rundt kompasset
           bygningsGruppe.rotation.set(0, 0, 0);
           bygningsGruppe.rotation.y = THREE.MathUtils.degToRad(BYGG_ROTASJON_NORD);
           
           scene.add(bygningsGruppe);
-          console.log("Modellen er kalibrert med Civil 3D-input!");
           
           oppdaterGeometriPosisjon();
           setupKeyboardControls();
           animate();
         });
 
-        // Tillater flytting av ankeret hvis Civil 3D-verdien må mikro-justeres
         origoMarkør.addListener('drag', function(event) {
           origoGPS.lat = event.latLng.lat();
           origoGPS.lng = event.latLng.lng();
@@ -181,7 +175,6 @@
         document.getElementById("txt-lng").innerText = origoGPS.lng.toFixed(6);
         document.getElementById("txt-høyde").innerText = globalHøyde.toFixed(1) + "m";
 
-        // 1. Regn ut 3D-posisjon i forhold til Street View-kameraets gjeldende posisjon
         if (panorama && bygningsGruppe) {
           const kamPos = panorama.getPosition();
           const R = 6378137; 
@@ -193,13 +186,11 @@
           bygningsGruppe.position.set(meterØst, globalHøyde, -meterNord);
         }
 
-        // 2. Tegner 2D-polygonen på satellittkartet (ca. 155m lang kaikloss)
+        // Beregner nøyaktig hvor den blå 2D-polygonen skal tegnes i forhold til ankeret
         const vinkelRad = THREE.MathUtils.degToRad(BYGG_ROTASJON_NORD);
         const latMeter = 111132; 
         const lngMeter = 40075000 * Math.cos(THREE.MathUtils.degToRad(origoGPS.lat)) / 360;
 
-        // Vi forskyver senteret av 2D-polygonen med Revit-offsettene slik at den 
-        // tegnes oppe på kaiområdet, akkurat der bygget ditt faktisk befinner seg!
         const senter2D = {
           lat: origoGPS.lat + ((REVIT_OFFSET_Y * Math.cos(vinkelRad) + REVIT_OFFSET_X * Math.sin(vinkelRad)) / latMeter),
           lng: origoGPS.lng + ((-REVIT_OFFSET_Y * Math.sin(vinkelRad) + REVIT_OFFSET_X * Math.cos(vinkelRad)) / lngMeter)
@@ -237,8 +228,8 @@
           if (e.key === 'ArrowLeft') { origoGPS.lng -= stegGPS; e.preventDefault(); }
           if (e.key === 'ArrowRight') { origoGPS.lng += stegGPS; e.preventDefault(); }
           
-          if (e.key === 'PageUp') { globalHøyde += 0.1; e.preventDefault(); }
-          if (e.key === 'PageDown') { globalHøyde -= 0.1; e.preventDefault(); }
+          if (e.key === 'PageUp') { globalHøyde += 0.2; e.preventDefault(); }
+          if (e.key === 'PageDown') { globalHøyde -= 0.2; e.preventDefault(); }
 
           oppdaterGeometriPosisjon();
         });
