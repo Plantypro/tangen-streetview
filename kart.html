@@ -21,16 +21,12 @@
 
     <script>
       // ==========================================================
-      // GEOGRAFISKE DATA FOR FASTLÅSING PÅ TOMT
+      // GEOGRAFISKE DATA FOR PLASSERING PÅ TANGEN 7
       // ==========================================================
-      // Det eksakte GPS-punktet på plenen for Tangen 7 der huset skal stå stille
+      // Juster disse tallene bittelitt hvis du vil dytte huset rundt på plenen
       const BYGG_GPS = { lat: 59.000320, lng: 5.659300 }; 
-      
-      // Høydejustering i meter i forhold til kameraets øyehøyde på asfalten
-      const BYGG_HØYDE = -1.6; 
-      
-      // Sann Nord-rotasjon fra Revit-kompasset ditt
-      const BYGG_ROTASJON_NORD = 31.75; 
+      const BYGG_HØYDE = -1.6; // Høydejustering i meter i forhold til veien
+      const BYGG_ROTASJON_NORD = 31.75; // Sann Nord-rotasjon fra Revit
 
       // Startposisjon for Street View-kameraet ute i gata
       const kameraStartGPS = { lat: 59.000383, lng: 5.659569 }; 
@@ -59,51 +55,42 @@
         loader.load('25012 Tangen 7 - Nybygg.glb', function (gltf) {
           modell = gltf.scene;
           
-          // MÅLESTOKK (1:1 meter fra den perfekte Leia-eksporten din)
+          // MÅLESTOKK (1:1 meter fra Leia-eksporten din)
           modell.scale.set(1, 1, 1);
           
-          // Siden aksene dine er helt korrekte nå, nullstiller vi lokal posisjon 
-          // og setter kun Sann Nord-rotasjonen rundt den vertikale Y-aksen.
-          modell.position.set(0, 0, 0);
-          modell.rotation.set(0, 0, 0);
-          modell.rotation.y = THREE.MathUtils.degToRad(BYGG_ROTASJON_NORD);
-
-          // Sentrerer geometrien til modellens eget midtpunkt internt
+          // ==========================================================
+          // AUTOMATISK UTJEVNING AV DET FJERNE REVIT-NULLPUNKTET
+          // ==========================================================
+          // 1. Vi finner de fysiske yttergrensene til KUN selve bygningskroppen
           const boks = new THREE.Box3().setFromObject(modell);
           const senter = new THREE.Vector3();
           boks.getCenter(senter);
           
+          // 2. Vi tvinger bygningens faktiske midtpunkt inn til (0,0,0) lokalt.
+          // Dette sletter effekten av at Revit-0-punktet lå flere hundre meter unna!
           modell.position.x = -senter.x;
-          modell.position.y = -boks.min.y; // Setter laveste punkt på huset til lokal 0
+          modell.position.y = -boks.min.y; // Setter bunnen av selve bygget til 0
           modell.position.z = -senter.z;
+
+          // 3. Vi oppretter en rotasjonsgruppe (anker) nøyaktig i byggets nye senter
+          const rotasjonsAnker = new THREE.Group();
+          rotasjonsAnker.add(modell);
           
-          scene.add(modell);
-          console.log("Modellen er kalibrert og klar for geografisk låsing.");
+          // 4. Nå roterer vi bygget nøyaktig rundt sin egen akse i stedet for det fjerne 0-punktet
+          rotasjonsAnker.rotation.y = THREE.MathUtils.degToRad(BYGG_ROTASJON_NORD);
           
-          // Setter opp en rød pinne i midten av tomta for å bekrefte fastnaglingen
+          scene.add(rotasjonsAnker);
+          console.log("Bygningssenteret er funnet, det fjerne Revit-0-punktet er overstyrt!");
+          
+          // Vi beholder en rød stang akkurat der bygningssenteret er låst fast
           opprettHjelpelinje();
           
-          // Kjør første geografiske plassering
-          oppdaterByggPlassering();
+          // Aktiver geografisk plassering koblet til scenegruppen
+          oppdaterByggPlassering(rotasjonsAnker);
           
           animate();
         }, undefined, function (error) {
           console.error("Feil under lasting av GLB-fil:", error);
-        });
-
-        // ==========================================================
-        // GEOGRAFISK SYNKRONISERING NÅR DU BEVEGER DEG I KARTET
-        // ==========================================================
-        panorama.addListener('position_changed', () => {
-          oppdaterByggPlassering(); 
-        });
-
-        panorama.addListener('pov_changed', () => {
-          updateCameraOrientation();
-        });
-        
-        panorama.addListener('zoom_changed', () => {
-          updateCameraOrientation();
         });
       }
 
@@ -111,15 +98,16 @@
         const materiale = new THREE.LineBasicMaterial({ color: 0xff0000 });
         const punkter = [];
         punkter.push(new THREE.Vector3(0, -2, 0));
-        punkter.push(new THREE.Vector3(0, 25, 0)); // Rød siktepinne midt på tomta
+        punkter.push(new THREE.Vector3(0, 20, 0)); 
         const geometri = new THREE.BufferGeometry().setFromPoints(punkter);
         const linje = new THREE.Line(geometri, materiale);
         scene.add(linje);
       }
 
-      // GEODETISK FORTEGNS-KORREKSJON: Flytter verdenen motsatt av der du går
-      function oppdaterByggPlassering() {
-        if (!panorama || !scene) return;
+      // GEODETISK SYNKRONISERING: Flytter 3D-verdenen stabilt i motsatt retning av der du går
+      function oppdaterByggPlassering(aktivGruppe) {
+        const målGruppe = aktivGruppe || scene.children.find(c => c instanceof THREE.Group);
+        if (!panorama || !målGruppe) return;
 
         const kamPos = panorama.getPosition();
         const kamLat = kamPos.lat();
@@ -133,9 +121,8 @@
         const meterNord = dLat * R;
         const meterØst = dLng * R * Math.cos(THREE.MathUtils.degToRad(kamLat));
 
-        // KRITISK ENDRING: Vi flytter SCENEN i stedet for modellen, 
-        // slik at 3D-verdenen forskyver seg stabilt når du klikker deg bortover veien!
-        scene.position.set(meterØst, BYGG_HØYDE, -meterNord);
+        // Låser hele gruppen fast i nøyaktig meteravstand fra der du står akkurat nå
+        målGruppe.position.set(meterØst, BYGG_HØYDE, -meterNord);
         
         updateCameraOrientation();
       }
@@ -166,6 +153,13 @@
         container.appendChild(renderer.domElement);
 
         window.addEventListener('resize', onWindowResize);
+        
+        // Sørger for løpende oppdatering når du klikker deg bortover veien
+        if (panorama) {
+          panorama.addListener('position_changed', () => oppdaterByggPlassering());
+          panorama.addListener('pov_changed', () => updateCameraOrientation());
+          panorama.addListener('zoom_changed', () => updateCameraOrientation());
+        }
       }
 
       function updateCameraOrientation() {
