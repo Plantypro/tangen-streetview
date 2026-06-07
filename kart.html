@@ -2,7 +2,7 @@
 <html>
   <head>
     <meta charset="utf-8">
-    <title>Tangen 7 - Fastnaglet Street View</title>
+    <title>Tangen 7 - Georeferert Street View</title>
     <style>
       html, body, #streetview-container { 
         height: 100%; 
@@ -21,20 +21,29 @@
 
     <script>
       // ==========================================================
-      // GEOGRAFISKE DATA FOR PLASSERING PÅ TANGEN 7
+      // GEOGRAFISKE DATA FRA REVIT (TANGEN 7)
       // ==========================================================
-      // Juster disse tallene bittelitt hvis du vil dytte huset rundt på plenen
-      const BYGG_GPS = { lat: 59.000320, lng: 5.659300 }; 
-      const BYGG_HØYDE = -1.6; // Høydejustering i meter i forhold til veien
-      const BYGG_ROTASJON_NORD = 31.75; // Sann Nord-rotasjon fra Revit
+      // GPS-koordinat for Aksekryss A / S1 (Hjørnet av bygget ditt) midt på tomta
+      const BYGG_GPS = { lat: 59.000300, lng: 5.659350 }; 
+      
+      // Siden veien ligger på +2.3m over havet, og kameraet er i øyehøyde (ca 1.6m over veien),
+      // setter vi denne til -3.9m for å plante underbygningen perfekt på asfalten.
+      const BYGG_HØYDE = -3.9; 
+      
+      // Sann Nord-rotasjon fra Revit-kompasset ditt (31.75 grader)
+      const BYGG_ROTASJON_NORD = 31.75; 
+
+      // Eksakte forskyvninger fra Revit-tegningen din konvertert fra millimeter til meter
+      const REVIT_OFFSET_X = 251.092; 
+      const REVIT_OFFSET_Y = 100.559; // Dette tilsvarer Z-aksen i Three.js flateplan
 
       // Startposisjon for Street View-kameraet ute i gata
       const kameraStartGPS = { lat: 59.000383, lng: 5.659569 }; 
 
-      let panorama, scene, camera, renderer, modell;
+      let panorama, scene, camera, renderer, modell, bygningsGruppe;
 
       function initPlatform() {
-        // Start Street View rettet mot tomta (heading: 240 grader)
+        // Start Street View rettet direkte mot plenen (heading: 240)
         panorama = new google.maps.StreetViewPanorama(
           document.getElementById("streetview-container"), {
             position: kameraStartGPS,
@@ -55,38 +64,34 @@
         loader.load('25012 Tangen 7 - Nybygg.glb', function (gltf) {
           modell = gltf.scene;
           
-          // MÅLESTOKK (1:1 meter fra Leia-eksporten din)
+          // MÅLESTOKK (1:1 meter fra Leia-eksporten)
           modell.scale.set(1, 1, 1);
           
           // ==========================================================
-          // AUTOMATISK UTJEVNING AV DET FJERNE REVIT-NULLPUNKTET
+          // MATEMATISK PLASSERING AV REELLE AVSTANDER FRA TEGNINGEN DIN
           // ==========================================================
-          // 1. Vi finner de fysiske yttergrensene til KUN selve bygningskroppen
-          const boks = new THREE.Box3().setFromObject(modell);
-          const senter = new THREE.Vector3();
-          boks.getCenter(senter);
+          // Vi oppretter en ren 3D-gruppe som skal fungere som aksekrysset (A / S1)
+          bygningsGruppe = new THREE.Group();
           
-          // 2. Vi tvinger bygningens faktiske midtpunkt inn til (0,0,0) lokalt.
-          // Dette sletter effekten av at Revit-0-punktet lå flere hundre meter unna!
-          modell.position.x = -senter.x;
-          modell.position.y = -boks.min.y; // Setter bunnen av selve bygget til 0
-          modell.position.z = -senter.z;
-
-          // 3. Vi oppretter en rotasjonsgruppe (anker) nøyaktig i byggets nye senter
-          const rotasjonsAnker = new THREE.Group();
-          rotasjonsAnker.add(modell);
+          // Vi forskyver modellen med de nøyaktige meterne slik at hjørnet havner i gruppens (0,0,0)
+          modell.position.x = -REVIT_OFFSET_X;
+          modell.position.y = 0; 
+          modell.position.z = -REVIT_OFFSET_Y; 
           
-          // 4. Nå roterer vi bygget nøyaktig rundt sin egen akse i stedet for det fjerne 0-punktet
-          rotasjonsAnker.rotation.y = THREE.MathUtils.degToRad(BYGG_ROTASJON_NORD);
+          // Vi legger modellen inn i gruppen vår
+          bygningsGruppe.add(modell);
           
-          scene.add(rotasjonsAnker);
-          console.log("Bygningssenteret er funnet, det fjerne Revit-0-punktet er overstyrt!");
+          // Nå roterer vi hele bygget nøyaktig rundt aksekrysset basert på Sann Nord
+          bygningsGruppe.rotation.y = THREE.MathUtils.degToRad(BYGG_ROTASJON_NORD);
           
-          // Vi beholder en rød stang akkurat der bygningssenteret er låst fast
+          scene.add(bygningsGruppe);
+          console.log("Bygget er koordinert nøyaktig i forhold til aksekryss A / S1!");
+          
+          // Setter opp en rød pinne nøyaktig der aksekrysset (hjørnet) skal lande på plenen
           opprettHjelpelinje();
           
-          // Aktiver geografisk plassering koblet til scenegruppen
-          oppdaterByggPlassering(rotasjonsAnker);
+          // Kjør første geografiske plassering
+          oppdaterByggPlassering();
           
           animate();
         }, undefined, function (error) {
@@ -98,16 +103,15 @@
         const materiale = new THREE.LineBasicMaterial({ color: 0xff0000 });
         const punkter = [];
         punkter.push(new THREE.Vector3(0, -2, 0));
-        punkter.push(new THREE.Vector3(0, 20, 0)); 
+        punkter.push(new THREE.Vector3(0, 20, 0)); // Rød siktepinne på aksekrysset
         const geometri = new THREE.BufferGeometry().setFromPoints(punkter);
         const linje = new THREE.Line(geometri, materiale);
         scene.add(linje);
       }
 
       // GEODETISK SYNKRONISERING: Flytter 3D-verdenen stabilt i motsatt retning av der du går
-      function oppdaterByggPlassering(aktivGruppe) {
-        const målGruppe = aktivGruppe || scene.children.find(c => c instanceof THREE.Group);
-        if (!panorama || !målGruppe) return;
+      function oppdaterByggPlassering() {
+        if (!panorama || !bygningsGruppe) return;
 
         const kamPos = panorama.getPosition();
         const kamLat = kamPos.lat();
@@ -121,8 +125,8 @@
         const meterNord = dLat * R;
         const meterØst = dLng * R * Math.cos(THREE.MathUtils.degToRad(kamLat));
 
-        // Låser hele gruppen fast i nøyaktig meteravstand fra der du står akkurat nå
-        målGruppe.position.set(meterØst, BYGG_HØYDE, -meterNord);
+        // Låser hele aksekrysset fast i nøyaktig meteravstand fra der du står i veien
+        bygningsGruppe.position.set(meterØst, BYGG_HØYDE, -meterNord);
         
         updateCameraOrientation();
       }
@@ -154,7 +158,6 @@
 
         window.addEventListener('resize', onWindowResize);
         
-        // Sørger for løpende oppdatering når du klikker deg bortover veien
         if (panorama) {
           panorama.addListener('position_changed', () => oppdaterByggPlassering());
           panorama.addListener('pov_changed', () => updateCameraOrientation());
