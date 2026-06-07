@@ -2,7 +2,7 @@
 <html>
   <head>
     <meta charset="utf-8">
-    <title>Tangen 7 - Absolutt Georeferert</title>
+    <title>Tangen 7 - Testøkt i Origo</title>
     <style>
       html, body, #streetview-container { 
         height: 100%; 
@@ -21,55 +21,26 @@
 
     <script>
       // ==========================================================
-      // GEOGRAFISKE SPESIFIKASJONER FRA REVIT (UTM-32N / EPSG:25832)
+      // TESTKOORDINATER: KAMERAET STARTER NÅ DIREKTE I REVIT-0-PUNKTET
       // ==========================================================
-      // De eksakte koordinatene til Prosjekt-Nullpunktet fra tegningen din:
-      const REVIT_ORIGO_UTM = { east: 307995.6157, north: 6544604.4177 };
-      
-      // Forskyvning av selve bygningskroppen (Aksekryss A / S1) internt i modellen din (i meter)
-      const BYGG_OFFSET_X = 251.092;
-      const BYGG_OFFSET_Y = 100.559;
+      // Dette tilsvarer E 307995.6, N 6544604.4 fra tegningen din
+      const REVIT_ORIGO_GPS = { lat: 59.000732, lng: 5.659102 }; 
+
+      // Høydejustering: Siden vi står i 0-punktet, setter vi denne til -1.6 meter
+      // slik at modellens kote 0.00 ligger i plan med asfalten under linsa.
+      const BYGG_HØYDE = -1.6; 
 
       // Sann Nord-rotasjon fra Revit
       const BYGG_ROTASJON_NORD = 31.75; 
 
-      // Startposisjon for Street View ute i veien (Tangen 7)
-      const kameraStartGPS = { lat: 59.000383, lng: 5.659569 }; 
-
-      // Jordens radius brukt til Web Mercator-projeksjon (EPSG:3857)
-      const R_JORDA = 6378137;
-
       let panorama, scene, camera, renderer, bygningsGruppe;
 
-      // Hjelpefunksjon for å konvertere GPS (WGS84) til flate meterkoordinater (Web Mercator)
-      function gpsTilMeter(lat, lng) {
-        const x = lng * Math.PI / 180 * R_JORDA;
-        const y = Math.log(Math.tan((90 + lat) * Math.PI / 360)) * R_JORDA;
-        return { x: x, y: y };
-      }
-
-      // Hjelpefunksjon for å konvertere UTM-32N direkte til Web Mercator-skalaen
-      // Siden Tangen 7 ligger rundt 59°N, kalibrerer vi forholdet mellom UTM-aksene og Mercator-aksene
-      function utmTilMeter(east, north) {
-        // Sentralmeridian for UTM sone 32N er 9 grader øst
-        const lngOrigo = 9.0;
-        const latOrigo = 0.0;
-        const meterOrigo = gpsTilMeter(latOrigo, lngOrigo);
-        
-        // Beregner skala-korreksjon for 59 grader nord
-        const skremsfaktor = 1 / Math.cos(59.0003 * Math.PI / 180);
-        
-        // Transformerer og skalerer UTM-aksene slik at de matcher Three.js-verdenen lineært
-        const x = (east - 500000) * skremsfaktor + meterOrigo.x;
-        const y = north * skremsfaktor;
-        return { x: x, y: y };
-      }
-
       function initPlatform() {
+        // Starter kameraet i det absolutte nullpunktet og ser rundt oss (heading: 0)
         panorama = new google.maps.StreetViewPanorama(
           document.getElementById("streetview-container"), {
-            position: kameraStartGPS,
-            pov: { heading: 240, pitch: 0 }, 
+            position: REVIT_ORIGO_GPS,
+            pov: { heading: 0, pitch: 0 }, 
             zoom: 1,
             visible: true
           }
@@ -88,52 +59,41 @@
           
           bygningsGruppe = new THREE.Group();
           
-          // 1. Plasserer modellen slik at det interne Revit-nullpunktet lander nøyaktig i gruppens (0,0,0)
-          modell.position.set(-BYGG_OFFSET_X, 0, -BYGG_OFFSET_Y);
+          // Siden vi står i ekte origo, lar vi modellens posisjon være helt urørt (0,0,0).
+          // Da vil vi se nøyaktig hvordan Leia-eksporten har plassert geometrien.
+          modell.position.set(0, 0, 0);
           bygningsGruppe.add(modell);
           
-          // 2. Roterer modellen flatt rundt sitt eget georefererte 0-punkt i forhold til Sann Nord
+          // Vrir modellen basert på Sann Nord
           bygningsGruppe.rotation.set(0, 0, 0);
           bygningsGruppe.rotation.y = THREE.MathUtils.degToRad(BYGG_ROTASJON_NORD);
           
-          scene.add(bygningsGruppe);
-          console.log("Modellen er låst til sitt absolutte geodetiske referansepunkt.");
+          // Setter gruppen direkte under kameraet vårt
+          bygningsGruppe.position.set(0, BYGG_HØYDE, 0);
           
-          oppdaterByggPlassering();
+          scene.add(bygningsGruppe);
+          console.log("Kameraet og modellens 0-punkt er nå samkjørt i samme posisjon!");
+          
+          opprettHjelpelinje();
           animate();
         }, undefined, function (error) {
           console.error("Feil under lasting av GLB-fil:", error);
         });
+
+        // Oppdaterer linsa når du snur deg i gata
+        panorama.addListener('pov_changed', () => updateCameraOrientation());
+        panorama.addListener('zoom_changed', () => updateCameraOrientation());
       }
 
-      // DEN NYE ABSOLUTTE PLASSERINGSFUNKSJONEN: Nagler modellen fast til jordskorpa
-      function oppdaterByggPlassering() {
-        if (!panorama || !bygningsGruppe) return;
-
-        // 1. Hent gjeldende GPS-posisjon til Street View-kameraet
-        const kamPos = panorama.getPosition();
-        const kamLat = kamPos.lat();
-        const kamLng = kamPos.lng();
-
-        // 2. Konverter kameraets posisjon til absolutte verdens-meter
-        const kamMeter = gpsTilMeter(kamLat, kamLng);
-
-        // 3. Konverter Revit sitt ekte 0-punkt (UTM) til absolutte verdens-meter
-        const origoMeter = utmTilMeter(REVIT_ORIGO_UTM.east, REVIT_ORIGO_UTM.north);
-
-        // 4. Regn ut den nøyaktige forskyvningen mellom deg og 0-punktet i den virkelige verden
-        const deltaX = origoMeter.x - kamMeter.x;
-        const deltaZ = origoMeter.y - kamMeter.y;
-
-        // 5. Finn den korrekte høyden (Kote 0.00). Siden kote 0.00 er havnivå, 
-        // og terrenget ved Tangen 7 ligger ca. 2.5 meter over havet, og kameraet er 1.6 meter over veien,
-        // setter vi en absolutt kote-høyde her (justeres opp/ned ved behov)
-        const KOTE_NULL_HØYDE = -4.1; 
-
-        // Lås scenegruppen fast. Nå vil ikke modellen flytte på seg når du går!
-        bygningsGruppe.position.set(deltaX, KOTE_NULL_HØYDE, -deltaZ);
-        
-        updateCameraOrientation();
+      function opprettHjelpelinje() {
+        // Tegner en loddrett rød strek i det absolutte nullpunktet (der du står)
+        const materiale = new THREE.LineBasicMaterial({ color: 0xff0000 });
+        const punkter = [];
+        punkter.push(new THREE.Vector3(0, -5, 0));
+        punkter.push(new THREE.Vector3(0, 20, 0)); 
+        const geometri = new THREE.BufferGeometry().setFromPoints(punkter);
+        const linje = new THREE.Line(geometri, materiale);
+        scene.add(linje);
       }
 
       function setupThreeJS() {
@@ -162,12 +122,6 @@
         container.appendChild(renderer.domElement);
 
         window.addEventListener('resize', onWindowResize);
-        
-        if (panorama) {
-          panorama.addListener('position_changed', () => oppdaterByggPlassering());
-          panorama.addListener('pov_changed', () => updateCameraOrientation());
-          panorama.addListener('zoom_changed', () => updateCameraOrientation());
-        }
       }
 
       function updateCameraOrientation() {
