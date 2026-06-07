@@ -66,7 +66,7 @@
     <div id="control-panel">
       <div><b>Ankerpunkt GPS:</b> <span id="txt-lat" class="coordinate-box">Søker...</span>, <span id="txt-lng" class="coordinate-box">Søker...</span></div>
       <div>|</div>
-      <div><b>Høyde (kote):</b> <span id="txt-høyde" class="coordinate-box">-1.6m</span></div>
+      <div><b>Høyde (kote):</b> <span id="txt-høyde" class="coordinate-box">-18.0m</span></div>
     </div>
 
     <div id="instructions">
@@ -80,15 +80,13 @@
     <div id="map-container"></div>
 
     <script>
-      // ==========================================================
-      // GEOGRAFISKE DATA FRA CIVIL 3D / REVIT
-      // ==========================================================
-      // Justert startposisjon slik at det blå 2D-omrisset treffer kaiområdet ditt med en gang!
+      // Startposisjon kalibrert i forhold til Civil 3D-krysset ditt
       let ankerGPS = { lat: 59.000020, lng: 5.659220 }; 
-      let byggHøyde = -1.6; 
-      const BYGG_ROTASJON_NORD = 31.75; // Sann Nord fra kompasset ditt
+      
+      // TVINGES NED: Satt til -18.0 meter for å bringe oversiden av modellen ned til bakken
+      let byggHøyde = -18.0; 
+      const BYGG_ROTASJON_NORD = 31.75; 
 
-      // De eksakte meter-offsettene til Aksekryss A / S1 direkte fra tegningen din
       const REVIT_OFFSET_X = 251.092; 
       const REVIT_OFFSET_Y = 100.559; 
 
@@ -97,17 +95,15 @@
       let panorama, map, byggMarkør, bygg2DOmriss, scene, camera, renderer, bygningsGruppe;
 
       function initPlatform() {
-        // STREET VIEW (Venstre side)
         panorama = new google.maps.StreetViewPanorama(
           document.getElementById("streetview-container"), {
             position: kameraStartGPS,
-            pov: { heading: 140, pitch: 0 }, 
+            pov: { heading: 140, pitch: -2 }, 
             zoom: 1,
             visible: true
           }
         );
 
-        // SATELLITTKART (Høyre side)
         map = new google.maps.Map(document.getElementById("map-container"), {
           center: { lat: 59.000150, lng: 5.659500 },
           zoom: 18,
@@ -121,7 +117,6 @@
           title: "Ankerpunkt (Ekte 0-punkt)"
         });
 
-        // Det blå 2D-omrisset (Satt til ca. 155m x 58m for å matche den rødskraverte klossen din)
         bygg2DOmriss = new google.maps.Polygon({
           strokeColor: "#00aaff",
           strokeOpacity: 0.8,
@@ -145,19 +140,21 @@
           bygningsGruppe = new THREE.Group();
           
           // ==========================================================
-          // NATIVE PLASSERING: INGEN DOBBELT-FLIPPING AV AKSER
+          // KRITISK ENDRING: VI FLIPPER BYGGET SÅ DET DET PEKER NED
           // ==========================================================
-          // Siden du har "Flip YZ" på i Leia, skal vi ikke rulle modellen på X eller Z i det hele tatt.
-          // Vi forskyver den kun direkte i forhold til de reelle meter-offsettene dine.
+          // Vi snur modellen 180 grader (Math.PI) rundt X-aksen så taket/veggene kommer til syne
+          modell.rotation.set(Math.PI, 0, 0);
+          
+          // Justerer posisjonen i forhold til de reelle målene dine
           modell.position.set(-REVIT_OFFSET_X, 0, -REVIT_OFFSET_Y);
           bygningsGruppe.add(modell);
           
-          // Ren, horisontal kompassrotasjon rundt det sanne ankerpunktet
+          // Ren, flat kompassretning rundt det sanne ankerpunktet
           bygningsGruppe.rotation.set(0, 0, 0);
           bygningsGruppe.rotation.y = THREE.MathUtils.degToRad(BYGG_ROTASJON_NORD);
           
           scene.add(bygningsGruppe);
-          console.log("Modellen er georeferert flatt i 1:1 skala basert på Civil 3D.");
+          console.log("Modellen er snudd, lagt flatt og klargjort.");
           
           oppdaterPosisjonOgKart();
           setupKeyboardControls();
@@ -192,12 +189,10 @@
           bygningsGruppe.position.set(meterØst, byggHøyde, -meterNord);
         }
 
-        // Beregner nøyaktig hvor det blå 2D-omrisset skal tegnes på kartet ut i fra ankeret
         const vinkelRad = THREE.MathUtils.degToRad(BYGG_ROTASJON_NORD);
         const latMeter = 111132; 
         const lngMeter = 40075000 * Math.cos(THREE.MathUtils.degToRad(ankerGPS.lat)) / 360;
 
-        // Forskyver det blå omrisset slik at det flytter seg opp på kaia der bygget faktisk ligger
         const senter2D = {
           lat: ankerGPS.lat + ((REVIT_OFFSET_Y * Math.cos(vinkelRad) + REVIT_OFFSET_X * Math.sin(vinkelRad)) / latMeter),
           lng: ankerGPS.lng + ((-REVIT_OFFSET_Y * Math.sin(vinkelRad) + REVIT_OFFSET_X * Math.cos(vinkelRad)) / lngMeter)
@@ -235,8 +230,8 @@
           if (e.key === 'ArrowLeft') { ankerGPS.lng -= stegGPS; e.preventDefault(); }
           if (e.key === 'ArrowRight') { ankerGPS.lng += stegGPS; e.preventDefault(); }
           
-          if (e.key === 'PageUp') { byggHøyde += 0.2; e.preventDefault(); }
-          if (e.key === 'PageDown') { byggHøyde -= 0.2; e.preventDefault(); }
+          if (e.key === 'PageUp') { byggHøyde += 0.5; e.preventDefault(); }
+          if (e.key === 'PageDown') { byggHøyde -= 0.5; e.preventDefault(); }
 
           oppdaterPosisjonOgKart();
         });
