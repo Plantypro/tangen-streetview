@@ -100,4 +100,206 @@
 
       let panorama, map, senterMarkør, bygg2DOmriss, scene, camera, renderer, bygningsGruppe, modellIntern;
 
-      function gpsTilMeter
+      function gpsTilMeter(lat, lng) {
+        const x = lng * Math.PI / 180 * R_JORDA;
+        const y = Math.log(Math.tan((90 + lat) * Math.PI / 360)) * R_JORDA;
+        return { x: x, y: y };
+      }
+
+      function initPlatform() {
+        panorama = new google.maps.StreetViewPanorama(
+          document.getElementById("streetview-container"), {
+            position: kameraStartGPS,
+            pov: { heading: 140, pitch: 0 }, 
+            zoom: 1,
+            visible: true
+          }
+        );
+
+        map = new google.maps.Map(document.getElementById("map-container"), {
+          center: tomtSenterGPS,
+          zoom: 19,
+          mapTypeId: 'satellite'
+        });
+
+        senterMarkør = new google.maps.Marker({
+          position: tomtSenterGPS,
+          map: map,
+          draggable: true,
+          title: "Byggets midtpunkt"
+        });
+
+        bygg2DOmriss = new google.maps.Polygon({
+          strokeColor: "#00aaff",
+          strokeOpacity: 0.8,
+          strokeWeight: 3,
+          fillColor: "#00aaff",
+          fillOpacity: 0.25,
+          map: map
+        });
+
+        setupThreeJS();
+
+        const loader = new THREE.GLTFLoader();
+        const dracoLoader = new THREE.DRACOLoader();
+        dracoLoader.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.6/');
+        loader.setDRACOLoader(dracoLoader);
+        
+        loader.load('25012 Tangen 7 - Nybygg.glb', function (gltf) {
+          modellIntern = gltf.scene;
+          modellIntern.scale.set(1, 1, 1);
+          
+          bygningsGruppe = new THREE.Group();
+          modellIntern.position.set(-REVIT_OFFSET_X, 0, -REVIT_OFFSET_Y);
+          bygningsGruppe.add(modellIntern);
+          
+          scene.add(bygningsGruppe);
+          
+          oppdaterGeometriPosisjon();
+          setupKeyboardControls();
+          animate();
+        });
+
+        senterMarkør.addListener('drag', function(event) {
+          tomtSenterGPS.lat = event.latLng.lat();
+          tomtSenterGPS.lng = event.latLng.lng();
+          oppdaterGeometriPosisjon();
+          map.panTo(tomtSenterGPS);
+        });
+
+        panorama.addListener('pov_changed', () => updateCameraOrientation());
+        panorama.addListener('zoom_changed', () => updateCameraOrientation());
+      }
+
+      function oppdaterGeometriPosisjon() {
+        document.getElementById("txt-lat").innerText = tomtSenterGPS.lat.toFixed(6) + ", " + tomtSenterGPS.lng.toFixed(6);
+        document.getElementById("txt-høyde").innerText = globalHøyde.toFixed(2) + "m";
+        document.getElementById("txt-rot").innerText = gjeldendeRotasjon.toFixed(2) + "°";
+
+        if (panorama && bygningsGruppe) {
+          const kamPos = panorama.getPosition();
+          const R = 6378137; 
+          const dLat = THREE.MathUtils.degToRad(tomtSenterGPS.lat - kamPos.lat());
+          const dLng = THREE.MathUtils.degToRad(tomtSenterGPS.lng - kamPos.lng());
+          const meterNord = dLat * R;
+          const meterØst = dLng * R * Math.cos(THREE.MathUtils.degToRad(kamPos.lat()));
+          
+          bygningsGruppe.position.set(meterØst, globalHøyde, -meterNord);
+          
+          bygningsGruppe.rotation.set(0, 0, 0);
+          bygningsGruppe.rotation.y = THREE.MathUtils.degToRad(gjeldendeRotasjon);
+        }
+
+        const vinkelRad = THREE.MathUtils.degToRad(gjeldendeRotasjon);
+        const latMeter = 111132; 
+        const lngMeter = 40075000 * Math.cos(THREE.MathUtils.degToRad(tomtSenterGPS.lat)) / 360;
+
+        const l = 155; 
+        const b = 58; 
+
+        const hjørner = [
+          { dx: -b/2, dy: -l/2 },
+          { dx: b/2, dy: -l/2 },
+          { dx: b/2, dy: l/2 },
+          { dx: -b/2, dy: l/2 }
+        ];
+
+        const polygonStier = hjørner.map(h => {
+          const rx = h.dx * Math.cos(vinkelRad) - h.dy * Math.sin(vinkelRad);
+          const ry = h.dx * Math.sin(vinkelRad) + h.dy * Math.cos(vinkelRad);
+          return {
+            lat: tomtSenterGPS.lat + (ry / latMeter),
+            lng: tomtSenterGPS.lng + (rx / lngMeter)
+          };
+        });
+
+        bygg2DOmriss.setPaths(polygonStier);
+        senterMarkør.setPosition(tomtSenterGPS);
+      }
+
+      function setupKeyboardControls() {
+        window.addEventListener('keydown', function(e) {
+          const enMeterILat = 1.0 / 111132;
+          const enMeterILng = 1.0 / (40075000 * Math.cos(THREE.MathUtils.degToRad(tomtSenterGPS.lat)) / 360);
+          
+          let loggTekst = "";
+
+          if (e.key === 'ArrowUp') { tomtSenterGPS.lat += enMeterILat; loggTekst = "Flyttet 1m Nord"; e.preventDefault(); }
+          if (e.key === 'ArrowDown') { tomtSenterGPS.lat -= enMeterILat; loggTekst = "Flyttet 1m Sør"; e.preventDefault(); }
+          if (e.key === 'ArrowLeft') { tomtSenterGPS.lng -= enMeterILng; loggTekst = "Flyttet 1m Vest"; e.preventDefault(); }
+          if (e.key === 'ArrowRight') { tomtSenterGPS.lng += enMeterILng; loggTekst = "Flyttet 1m Øst"; e.preventDefault(); }
+          
+          if (e.key === 'PageUp') { globalHøyde += 0.10; loggTekst = "Hevet 10cm"; e.preventDefault(); }
+          if (e.key === 'PageDown') { globalHøyde -= 0.10; loggTekst = "Senket 10cm"; e.preventDefault(); }
+
+          if (e.key === 'r' || e.key === 'R') { 
+            gjeldendeRotasjon += 5.0; 
+            loggTekst = "Roterte +5.0°"; 
+            e.preventDefault(); 
+          }
+          if (e.key === 'e' || e.key === 'E') { 
+            gjeldendeRotasjon -= 5.0; 
+            loggTekst = "Roterte -5.0°"; 
+            e.preventDefault(); 
+          }
+
+          if (loggTekst !== "") {
+            document.getElementById("txt-status").innerText = loggTekst;
+            oppdaterGeometriPosisjon();
+            
+            if (e.key.startsWith('Arrow')) {
+              map.panTo(tomtSenterGPS);
+            }
+          }
+        }, true); 
+      }
+
+      function setupThreeJS() {
+        const container = document.getElementById("streetview-container");
+        scene = new THREE.Scene();
+        
+        const ambientLight = new THREE.AmbientLight(0xffffff, 2.5);
+        scene.add(ambientLight);
+        
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 1.5);
+        directionalLight.position.set(30, 60, 30);
+        scene.add(directionalLight);
+
+        camera = new THREE.PerspectiveCamera(45, window.innerWidth / 2 / window.innerHeight, 0.1, 5000);
+        
+        renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+        renderer.setClearColor(0x000000, 0); 
+        renderer.setSize(window.innerWidth / 2, window.innerHeight);
+        
+        renderer.domElement.style.position = 'absolute';
+        renderer.domElement.style.top = '0';
+        renderer.domElement.style.left = '0';
+        renderer.domElement.style.zIndex = '10';
+        renderer.domElement.style.pointerEvents = 'none'; 
+        
+        container.appendChild(renderer.domElement);
+        window.addEventListener('resize', onWindowResize);
+      }
+
+      function updateCameraOrientation() {
+        if (!panorama || !camera) return;
+        const pov = panorama.getPov();
+        camera.rotation.set(THREE.MathUtils.degToRad(pov.pitch || 0), -THREE.MathUtils.degToRad(pov.heading || 0), 0, 'YXZ');
+        camera.fov = 180 / Math.pow(2, panorama.getZoom() || 1);
+        camera.updateProjectionMatrix();
+      }
+
+      function onWindowResize() {
+        camera.aspect = (window.innerWidth / 2) / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth / 2, window.innerHeight);
+      }
+
+      function animate() {
+        requestAnimationFrame(animate);
+        renderer.render(scene, camera);
+      }
+    </script>
+    <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyAKCY3L1KdO4oqxu_JVlCBkMCVHAcQOWNw&callback=initPlatform" async defer></script>
+  </body>
+</html>
