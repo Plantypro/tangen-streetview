@@ -2,7 +2,7 @@
 <html>
   <head>
     <meta charset="utf-8">
-    <title>Tangen 7 - Høyderegulert Street View</title>
+    <title>Tangen 7 - Stabilisert Street View</title>
     <style>
       html, body, #streetview-container { 
         height: 100%; 
@@ -24,10 +24,7 @@
       // GEOGRAFISKE DATA FRA REVIT (TANGEN 7)
       // ==========================================================
       const BYGG_GPS = { lat: 59.000320, lng: 5.659300 }; 
-      
-      // JUSTERT HØYDE: Satt til -18.0 meter for å hente kameraet ut av mørket
-      const BYGG_HØYDE = -18.0; 
-      
+      const BYGG_HØYDE = -10.0; // Flytter fundamentet ned slik at etasjene lander i synsfeltet
       const BYGG_ROTASJON_NORD = 31.75; 
 
       // Eksakte forskyvninger fra Revit-nullpunktet ditt (i meter)
@@ -61,16 +58,16 @@
           
           bygningsGruppe = new THREE.Group();
           
-          // Flytter modellen i forhold til Revit-origo
+          // 1. Trekk fra Revit-origo forskyvningen
           modell.position.set(-REVIT_OFFSET_X, 0, -REVIT_OFFSET_Y);
           bygningsGruppe.add(modell);
           
-          // Ren flat rotasjon rundt aksekrysset
+          // 2. Roter flatt rundt det korrekte hjørneankeret
           bygningsGruppe.rotation.set(0, 0, 0);
           bygningsGruppe.rotation.y = THREE.MathUtils.degToRad(BYGG_ROTASJON_NORD);
           
           scene.add(bygningsGruppe);
-          console.log("Modellen er kalibrert på trygg høyde.");
+          console.log("Modellen er kalibrert og linsene er justert.");
           
           opprettHjelpelinje();
           oppdaterByggPlassering();
@@ -102,6 +99,7 @@
         const meterNord = dLat * R;
         const meterØst = dLng * R * Math.cos(THREE.MathUtils.degToRad(kamPos.lat()));
 
+        // VIKTIG: Vi flytter kun bygningsgruppen, slik at 3D-kameraet står fjellstøtt i (0,0,0) sammen med Google
         bygningsGruppe.position.set(meterØst, BYGG_HØYDE, -meterNord);
         
         updateCameraOrientation();
@@ -118,7 +116,8 @@
         directionalLight.position.set(30, 60, 30);
         scene.add(directionalLight);
 
-        camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 2000);
+        // OPTIMALISERT LINSE (Near: 1.0, Far: 10000): Forhindrer at svære objekter blokkerer eller gjør skjermen mørk
+        camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 1.0, 10000);
         
         renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
         renderer.setClearColor(0x000000, 0); 
