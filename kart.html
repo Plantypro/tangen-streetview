@@ -2,7 +2,7 @@
 <html>
   <head>
     <meta charset="utf-8">
-    <title>Tangen 7 - Interaktiv 2D/3D Kalibrering</title>
+    <title>Tangen 7 - Senterkalibrert 2D/3D</title>
     <style>
       html, body { 
         height: 100%; 
@@ -53,62 +53,54 @@
   <body>
 
     <div id="control-panel">
-      <div><b>Markør GPS:</b> <span id="txt-lat" class="coordinate-box">Søker...</span>, <span id="txt-lng" class="coordinate-box">Søker...</span></div>
+      <div><b>Bygg Senter GPS:</b> <span id="txt-lat" class="coordinate-box">Søker...</span>, <span id="txt-lng" class="coordinate-box">Søker...</span></div>
       <div>|</div>
-      <div><b>Høyde (kote):</b> <span id="txt-høyde" class="coordinate-box">-1.6m</span></div>
+      <div><b>Høyde (kote):</b> <span id="txt-høyde" class="coordinate-box">-5.5m</span></div>
     </div>
 
     <div id="streetview-container"></div>
     <div id="map-container"></div>
 
     <script>
-      // Startposisjon satt i nærheten av gressplenen på Tangen 7
-      let byggGPS = { lat: 59.000300, lng: 5.659300 }; 
-      let byggHøyde = -1.6; 
+      // Startposisjon flyttet lenger sør-øst – midt på gressplenen du tegnet rundt
+      let byggGPS = { lat: 59.000150, lng: 5.659600 }; 
+      let byggHøyde = -5.5; // Drar modellen solid ned så den flukter med kaikanten
       const BYGG_ROTASJON_NORD = 31.75; 
-
-      // De eksakte Revit-offsettene dine (i meter)
-      const REVIT_OFFSET_X = 251.092; 
-      const REVIT_OFFSET_Y = 100.559; 
 
       let panorama, map, byggMarkør, bygg2DOmriss, scene, camera, renderer, bygningsGruppe;
 
       function initPlatform() {
-        // 1. START STREET VIEW (Venstre side)
+        // STREET VIEW (Venstre side) - Starter i gata og ser mot kaiområdet
         panorama = new google.maps.StreetViewPanorama(
           document.getElementById("streetview-container"), {
             position: { lat: 59.000383, lng: 5.659569 },
-            pov: { heading: 240, pitch: 0 }, 
+            pov: { heading: 140, pitch: -5 }, 
             zoom: 1,
             visible: true
           }
         );
 
-        // 2. START SATELLITTKART (Høyre side)
+        // SATELLITTKART (Høyre side)
         map = new google.maps.Map(document.getElementById("map-container"), {
           center: byggGPS,
-          zoom: 19,
+          zoom: 18,
           mapTypeId: 'satellite'
         });
 
-        // Sentral flyttbar markør
         byggMarkør = new google.maps.Marker({
           position: byggGPS,
           map: map,
           draggable: true,
-          title: "Flytt for å posisjonere bygget"
+          title: "Dra meg til sentrum av rød sirkel"
         });
 
-        // ==========================================================
-        // TEGNER EN BLÅ POLYGON SOM REPRODUSERER BYGGET PÅ SATELLITTKARTET
-        // ==========================================================
-        // Vi lager en boks (f.eks. 40x25 meter) som representerer byggets fotavtrykk på kartet
+        // Blått 2D-omriss konfigurert for den faktiske store tomtestørrelsen
         bygg2DOmriss = new google.maps.Polygon({
           strokeColor: "#00aaff",
           strokeOpacity: 0.8,
           strokeWeight: 3,
           fillColor: "#00aaff",
-          fillOpacity: 0.35,
+          fillOpacity: 0.25,
           map: map
         });
 
@@ -125,22 +117,29 @@
           
           bygningsGruppe = new THREE.Group();
           
-          // TVINGER MODELLEN FLAT: Vi overstyrer den gale hellingen som skjedde i Three.js
-          modell.position.set(-REVIT_OFFSET_X, 0, -REVIT_OFFSET_Y);
+          // ==========================================================
+          // AUTOMATISK SENTER-EVALUERING (Kaster ut gamle faste offsets)
+          // ==========================================================
+          const boks = new THREE.Box3().setFromObject(modell);
+          const senter = new THREE.Vector3();
+          boks.getCenter(senter);
+          
+          // Flytter lokalgeometrien slik at byggets reelle midtpunkt blir (0,0,0)
+          modell.position.x = -senter.x;
+          modell.position.y = -boks.min.y; // Setter laveste kote-punkt til lokal 0
+          modell.position.z = -senter.z;
           bygningsGruppe.add(modell);
           
-          // Ren, horisontal rotasjon rundt Y-aksen basert på kompasset
+          // Ren horisontal kompassrotasjon rundt det nye, sentrerte midtpunktet
           bygningsGruppe.rotation.set(0, 0, 0);
           bygningsGruppe.rotation.y = THREE.MathUtils.degToRad(BYGG_ROTASJON_NORD);
           
           scene.add(bygningsGruppe);
           
-          // Kjør oppdatering
           oppdaterPosisjonOgKart();
           animate();
         });
 
-        // Håndterer bevegelse av den røde nåla
         byggMarkør.addListener('drag', function(event) {
           byggGPS.lat = event.latLng.lat();
           byggGPS.lng = event.latLng.lng();
@@ -151,12 +150,10 @@
         panorama.addListener('zoom_changed', () => updateCameraOrientation());
       }
 
-      // FUNKSJON SOM OPPDATERER BÅDE 3D-MODELLEN OG DET BLÅ 2D-OMRISSET SAMTIDIG
       function oppdaterPosisjonOgKart() {
         document.getElementById("txt-lat").innerText = byggGPS.lat.toFixed(6);
         document.getElementById("txt-lng").innerText = byggGPS.lng.toFixed(6);
 
-        // 1. Oppdater 3D-modellen i Street View
         if (panorama && bygningsGruppe) {
           const kamPos = panorama.getPosition();
           const R = 6378137; 
@@ -168,15 +165,14 @@
           bygningsGruppe.position.set(meterØst, byggHøyde, -meterNord);
         }
 
-        // 2. Oppdater det blå 2D-omrisset på satellittkartet
-        // Vi regner ut fire hjørner rundt den røde markøren i forhold til Sann Nord (31.75 grader)
+        // Oppdaterer 2D-polygonen basert på størrelsen på det røde omrisset ditt
         const vinkelRad = THREE.MathUtils.degToRad(BYGG_ROTASJON_NORD);
         const latMeter = 111132; 
         const lngMeter = 40075000 * Math.cos(THREE.MathUtils.degToRad(byggGPS.lat)) / 360;
 
-        // Definerer størrelsen på bygget i meter på 2D-kartet (f.eks 45m langt, 25m bredt)
-        const l = 45; 
-        const b = 25; 
+        // Dimensjoner kalibrert etter tegningen din (ca. 160m lang kailinje, 60m bredde)
+        const l = 160; 
+        const b = 60; 
 
         const hjørner = [
           { dx: -b/2, dy: -l/2 },
@@ -186,10 +182,8 @@
         ];
 
         const polygonStier = hjørner.map(h => {
-          // Roterer hjørnene i forhold til kompassretningen
           const rx = h.dx * Math.cos(vinkelRad) - h.dy * Math.sin(vinkelRad);
           const ry = h.dx * Math.sin(vinkelRad) + h.dy * Math.cos(vinkelRad);
-          
           return {
             lat: byggGPS.lat + (ry / latMeter),
             lng: byggGPS.lng + (rx / lngMeter)
