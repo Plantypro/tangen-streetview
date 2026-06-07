@@ -20,11 +20,13 @@
     <div id="streetview-container"></div>
 
     <script>
+      // 2. GPS-KOORDINATER FOR TANGEN, RANDABERG
       const prosjektPosisjon = { lat: 59.000383, lng: 5.659569 }; 
+
       let panorama, scene, camera, renderer, modell;
 
       function initPlatform() {
-        // Start Street View
+        // 3. Setter opp Street View via stabilt JavaScript-objekt
         panorama = new google.maps.StreetViewPanorama(
           document.getElementById("streetview-container"), {
             position: prosjektPosisjon,
@@ -34,26 +36,35 @@
           }
         );
 
+        // 4. Sett opp Three.js overflatelaget
         setupThreeJS();
 
-        // Konfigurer og last inn 3D-modellen din
+        // 5. Konfigurer GLTF-loaderen med DRACO-dekoding for Revit-filen din
         const loader = new THREE.GLTFLoader();
         const dracoLoader = new THREE.DRACOLoader();
         dracoLoader.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.6/');
         loader.setDRACOLoader(dracoLoader);
         
+        // 6. Last inn Revit-modellen din
         loader.load('25012 Tangen 7 - Nybygg.glb', function (gltf) {
           modell = gltf.scene;
           modell.position.set(0, 0, 0); 
           modell.rotation.y = Math.PI * (45 / 180); 
+          
           scene.add(modell);
           animate();
         }, undefined, function (error) {
           console.error('Kunne ikke laste 3D-modellen:', error);
         });
 
-        panorama.addListener('pov_changed', () => updateCameraOrientation());
-        panorama.addListener('zoom_changed', () => updateCameraOrientation());
+        // 7. Synkroniserer kameraet når du ser deg rundt
+        panorama.addListener('pov_changed', () => {
+          updateCameraOrientation();
+        });
+        
+        panorama.addListener('zoom_changed', () => {
+          updateCameraOrientation();
+        });
       }
 
       function setupThreeJS() {
@@ -83,6 +94,7 @@
 
       function updateCameraOrientation() {
         if (!panorama || !camera) return;
+        
         const pov = panorama.getPov();
         if (!pov) return;
 
@@ -106,34 +118,6 @@
       }
     </script>
     
-    <script>
-      (function() {
-        // Vi definerer de to mest sannsynlige variantene av tegnene fra skjermbildet ditt
-        const nokkelAlternativ1 = "AIzaSyAKCY3L1KdO4oqxu_lVICbkMCVHAcQOWNw"; // Med liten L
-        const nokkelAlternativ2 = "AIzaSyAKCY3L1KdO4oqxu_IVICbkMCVHAcQOWNw"; // Med stor I
-
-        // Vi lytter etter om Google Maps spytter ut en nøkkelfeil i nettleseren
-        window.gm_authFailure = function() {
-          console.warn("Første nøkkel-kombinasjon feilet. Prøver alternativ konfigurasjon...");
-          const gammeltScript = document.getElementById("google-maps-script");
-          if (gammeltScript) gammeltScript.remove();
-          
-          // Hvis den første feiler, sletter vi den og fyrer av det andre alternativet med en gang
-          const nyttScript = document.createElement('script');
-          nyttScript.src = "https://maps.googleapis.com/maps/api/js?key=" + nokkelAlternativ2 + "&callback=initPlatform";
-          nyttScript.async = true;
-          nyttScript.defer = true;
-          document.head.appendChild(nyttScript);
-        };
-
-        // Laster inn det første alternativet ved oppstart
-        const script = document.createElement('script');
-        script.id = "google-maps-script";
-        script.src = "https://maps.googleapis.com/maps/api/js?key=" + nokkelAlternativ1 + "&callback=initPlatform";
-        script.async = true;
-        script.defer = true;
-        document.head.appendChild(script);
-      })();
-    </script>
+    <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyAKCY3L1KdO4oqxu_JVlCBkMCVHAcQOWNw&callback=initPlatform" async defer></script>
   </body>
 </html>
