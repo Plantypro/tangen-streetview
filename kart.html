@@ -2,22 +2,24 @@
 <html>
   <head>
     <meta charset="utf-8">
-    <title>Tangen 7 - Side-by-Side Kalibrering</title>
+    <title>Tangen 7 - Stabilisert 2D/3D</title>
     <style>
       html, body { 
         height: 100%; 
         margin: 0; 
         padding: 0; 
-        background-color: #000;
+        background-color: #111;
         font-family: sans-serif;
+        overflow: hidden;
       }
-      /* Splitter skjermen 50/50 side om side */
+      /* Tydelig splittelse av skjermen */
       #streetview-container {
         position: absolute;
         left: 0;
         top: 0;
         width: 50%;
         height: 100%;
+        background-color: #1a1a1a;
       }
       #map-container {
         position: absolute;
@@ -25,7 +27,8 @@
         top: 0;
         width: 50%;
         height: 100%;
-        border-left: 3px solid #333;
+        border-left: 2px solid #444;
+        background-color: #222;
       }
       #control-panel {
         position: absolute;
@@ -35,9 +38,8 @@
         z-index: 999;
         background: rgba(0, 0, 0, 0.9);
         color: #fff;
-        padding: 12px 20px;
-        border-radius: 8px;
-        box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+        padding: 10px 20px;
+        border-radius: 6px;
         font-size: 13px;
         display: flex;
         gap: 15px;
@@ -46,16 +48,18 @@
         font-family: monospace;
         color: #00ffcc;
       }
-      #instructions {
+      #error-log {
         position: absolute;
-        bottom: 20px;
-        left: 20px;
-        z-index: 999;
-        background: rgba(0,0,0,0.8);
-        color: #fff;
+        bottom: 10px;
+        right: 10px;
+        z-index: 1000;
+        background: rgba(255, 0, 0, 0.9);
+        color: white;
         padding: 10px;
-        border-radius: 5px;
-        font-size: 11px;
+        border-radius: 4px;
+        font-size: 12px;
+        max-width: 40%;
+        display: none;
       }
     </style>
     <script src="https://unpkg.com/three@0.147.0/build/three.min.js"></script>
@@ -65,35 +69,34 @@
   <body>
 
     <div id="control-panel">
-      <div><b>Ekte Origo GPS:</b> <span id="txt-lat" class="coordinate-box">59.000120</span>, <span id="txt-lng" class="coordinate-box">5.659350</span></div>
+      <div><b>Modell Status:</b> <span id="txt-status" style="color: #ffcc00;">Laster inn...</span></div>
       <div>|</div>
-      <div><b>Forskyvning Høyde:</b> <span id="txt-høyde" class="coordinate-box">-3.5m</span></div>
+      <div><b>Høyde (kote):</b> <span id="txt-høyde" class="coordinate-box">-3.5m</span></div>
     </div>
 
-    <div id="instructions">
-      <b>Slik henter du frem bygget:</b><br>
-      1. Klikk med musa på satellittkartet til høyre først.<br>
-      2. Bruk <b>Piltastene</b> for å flytte det blå omrisset over kaikanten.<br>
-      3. Bruk <b>PageUp / PageDown</b> for å heve eller senke koteplanet live i veien!
-    </div>
+    <div id="error-log"></div>
 
     <div id="streetview-container"></div>
     <div id="map-container"></div>
 
     <script>
-      // Startkoordinater plassert i nærheten av kaikanten
-      let origoGPS = { lat: 59.000020, lng: 5.659220 }; 
-      let globalHøyde = -3.5; 
+      // Automatisk feilfanger som forteller oss nøyaktig hva som krasjer på skjermen
+      window.onerror = function(msg, url, line) {
+        const logBox = document.getElementById('error-log');
+        logBox.style.display = 'block';
+        logBox.innerHTML += `<div><b>Feil:</b> ${msg} <br><small>Linje ${line}</small></div>`;
+        return false;
+      };
+
+      // Sanne, absolutte Civil 3D koordinater (UTM-32N)
+      const CIVIL3D_ORIGO = { east: 307995.6157, north: 6544604.4177 };
       const CIVIL3D_ROTASJON_NORD = 31.75; 
-
-      // De eksakte meter-offsettene fra Civil 3D-tegningen din
-      const REVIT_OFFSET_X = 251.092; 
-      const REVIT_OFFSET_Y = 100.559; 
-
+      
+      let byggHøyde = -3.5; 
       const kameraStartGPS = { lat: 59.000383, lng: 5.659569 }; 
       const R_JORDA = 6378137;
 
-      let panorama, map, origoMarkør, bygg2DOmriss, scene, camera, renderer, bygningsGruppe;
+      let panorama, map, scene, camera, renderer, masterGruppe;
 
       function gpsTilMeter(lat, lng) {
         const x = lng * Math.PI / 180 * R_JORDA;
@@ -112,7 +115,7 @@
       }
 
       function initPlatform() {
-        // STREET VIEW (Venstre side)
+        // 1. Last inn Street View på venstre side
         panorama = new google.maps.StreetViewPanorama(
           document.getElementById("streetview-container"), {
             position: kameraStartGPS,
@@ -122,28 +125,11 @@
           }
         );
 
-        // SATELLITTKART (Høyre side)
+        // 2. Last inn Satellittkart på høyre side
         map = new google.maps.Map(document.getElementById("map-container"), {
-          center: { lat: 59.000150, lng: 5.659500 },
+          center: { lat: 59.000200, lng: 5.659400 },
           zoom: 18,
           mapTypeId: 'satellite'
-        });
-
-        origoMarkør = new google.maps.Marker({
-          position: origoGPS,
-          map: map,
-          draggable: true,
-          title: "Civil 3D Origo"
-        });
-
-        // Blått omriss tilpasset din store tomt (ca. 155m x 58m)
-        bygg2DOmriss = new google.maps.Polygon({
-          strokeColor: "#00aaff",
-          strokeOpacity: 0.8,
-          strokeWeight: 3,
-          fillColor: "#00aaff",
-          fillOpacity: 0.25,
-          map: map
         });
 
         setupThreeJS();
@@ -157,69 +143,92 @@
           const modell = gltf.scene;
           modell.scale.set(1, 1, 1);
           
-          bygningsGruppe = new THREE.Group();
-          
-          // REN GEOMETRI: Siden "Flip YZ" og "Relocate to 0" er AV, 
-          // lar vi modellen ligge 100% urørt i sine native akser!
-          modell.rotation.set(0, 0, 0);
-          bygningsGruppe.add(modell);
+          // Siden "Flip YZ" er slått av i Leia, setter vi den flatt her:
+          modell.rotation.set(-Math.PI / 2, 0, 0);
+
+          masterGruppe = new THREE.Group();
+          masterGruppe.add(modell);
           
           // Setter rotasjon rundt det sanne kartkompasset
-          bygningsGruppe.rotation.set(0, 0, 0);
-          bygningsGruppe.rotation.y = THREE.MathUtils.degToRad(CIVIL3D_ROTASJON_NORD);
+          masterGruppe.rotation.set(0, 0, 0);
+          masterGruppe.rotation.y = THREE.MathUtils.degToRad(CIVIL3D_ROTASJON_NORD);
           
-          scene.add(bygningsGruppe);
-          console.log("Modellen kjører i rent 1:1 modus side-by-side.");
+          scene.add(masterGruppe);
+          document.getElementById("txt-status").innerText = "Suksess!";
+          document.getElementById("txt-status").style.color = "#00ffaa";
           
-          oppdaterGeometriPosisjon();
-          setupKeyboardControls();
+          oppdaterByggPlassering();
           animate();
+        }, undefined, function (error) {
+          console.error("Feil under lasting av 3D-fil:", error);
+          document.getElementById("txt-status").innerText = "Modellfeil!";
+          document.getElementById("txt-status").style.color = "#ff3333";
         });
 
-        origoMarkør.addListener('drag', function(event) {
-          origoGPS.lat = event.latLng.lat();
-          origoGPS.lng = event.latLng.lng();
-          oppdaterGeometriPosisjon();
-        });
-
+        panorama.addListener('position_changed', () => oppdaterByggPlassering());
         panorama.addListener('pov_changed', () => updateCameraOrientation());
         panorama.addListener('zoom_changed', () => updateCameraOrientation());
       }
 
-      function oppdaterGeometriPosisjon() {
-        document.getElementById("txt-lat").innerText = origoGPS.lat.toFixed(6);
-        document.getElementById("txt-lng").innerText = origoGPS.lng.toFixed(6);
-        document.getElementById("txt-høyde").innerText = globalHøyde.toFixed(1) + "m";
+      function oppdaterByggPlassering() {
+        if (!panorama || !masterGruppe) return;
 
-        if (panorama && bygningsGruppe) {
-          const kamPos = panorama.getPosition();
-          const R = 6378137; 
-          const dLat = THREE.MathUtils.degToRad(origoGPS.lat - kamPos.lat());
-          const dLng = THREE.MathUtils.degToRad(origoGPS.lng - kamPos.lng());
-          const meterNord = dLat * R;
-          const meterØst = dLng * R * Math.cos(THREE.MathUtils.degToRad(kamPos.lat()));
-          
-          bygningsGruppe.position.set(meterØst, globalHøyde, -meterNord);
-        }
+        const kamPos = panorama.getPosition();
+        const kamMeter = gpsTilMeter(kamPos.lat(), kamPos.lng());
+        const origoMeter = utmTilMeter(CIVIL3D_ORIGO.east, CIVIL3D_ORIGO.north);
 
-        const vinkelRad = THREE.MathUtils.degToRad(CIVIL3D_ROTASJON_NORD);
-        const latMeter = 111132; 
-        const lngMeter = 40075000 * Math.cos(THREE.MathUtils.degToRad(origoGPS.lat)) / 360;
+        const deltaX = origoMeter.x - kamMeter.x;
+        const deltaZ = origoMeter.y - kamMeter.y;
 
-        // Tegner 2D-polygonen forskjøvet opp på kaikanten
-        const senter2D = {
-          lat: origoGPS.lat + ((REVIT_OFFSET_Y * Math.cos(vinkelRad) + REVIT_OFFSET_X * Math.sin(vinkelRad)) / latMeter),
-          lng: origoGPS.lng + ((-REVIT_OFFSET_Y * Math.sin(vinkelRad) + REVIT_OFFSET_X * Math.cos(vinkelRad)) / lngMeter)
-        };
+        masterGruppe.position.set(deltaX, byggHøyde, -deltaZ);
+      }
 
-        const l = 155; 
-        const b = 58; 
+      function setupThreeJS() {
+        const container = document.getElementById("streetview-container");
+        scene = new THREE.Scene();
+        
+        const ambientLight = new THREE.AmbientLight(0xffffff, 2.5);
+        scene.add(ambientLight);
+        
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 1.5);
+        directionalLight.position.set(30, 60, 30);
+        scene.add(directionalLight);
 
-        const hjørner = [
-          { dx: -b/2, dy: -l/2 },
-          { dx: b/2, dy: -l/2 },
-          { dx: b/2, dy: l/2 },
-          { dx: -b/2, dy: l/2 }
-        ];
+        camera = new THREE.PerspectiveCamera(45, window.innerWidth / 2 / window.innerHeight, 0.1, 5000);
+        
+        renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+        renderer.setClearColor(0x000000, 0); 
+        renderer.setSize(window.innerWidth / 2, window.innerHeight);
+        
+        renderer.domElement.style.position = 'absolute';
+        renderer.domElement.style.top = '0';
+        renderer.domElement.style.left = '0';
+        renderer.domElement.style.zIndex = '10';
+        renderer.domElement.style.pointerEvents = 'none'; 
+        
+        container.appendChild(renderer.domElement);
+        window.addEventListener('resize', onWindowResize);
+      }
 
-        const
+      function updateCameraOrientation() {
+        if (!panorama || !camera) return;
+        const pov = panorama.getPov();
+        camera.rotation.set(THREE.MathUtils.degToRad(pov.pitch || 0), -THREE.MathUtils.degToRad(pov.heading || 0), 0, 'YXZ');
+        camera.fov = 180 / Math.pow(2, panorama.getZoom() || 1);
+        camera.updateProjectionMatrix();
+      }
+
+      function onWindowResize() {
+        camera.aspect = (window.innerWidth / 2) / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth / 2, window.innerHeight);
+      }
+
+      function animate() {
+        requestAnimationFrame(animate);
+        renderer.render(scene, camera);
+      }
+    </script>
+    <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyAKCY3L1KdO4oqxu_JVlCBkMCVHAcQOWNw&callback=initPlatform" async defer></script>
+  </body>
+</html>
