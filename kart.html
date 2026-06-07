@@ -2,7 +2,7 @@
 <html>
   <head>
     <meta charset="utf-8">
-    <title>Tangen 7 - Stabilisert Street View</title>
+    <title>Tangen 7 - Georeferert Street View</title>
     <style>
       html, body, #streetview-container { 
         height: 100%; 
@@ -23,8 +23,13 @@
       // ==========================================================
       // GEOGRAFISKE DATA FRA REVIT (TANGEN 7)
       // ==========================================================
-      const BYGG_GPS = { lat: 59.000320, lng: 5.659300 }; 
-      const BYGG_HØYDE = -10.0; // Flytter fundamentet ned slik at etasjene lander i synsfeltet
+      // Justert for å flytte bygget ut av nordvest-posisjonen og inn på tomta
+      const BYGG_GPS = { lat: 59.000280, lng: 5.659380 }; 
+      
+      // Naturlig høydejustering i forhold til Google-kameraets øyehøyde (ca 1.6 meter over veien)
+      const BYGG_HØYDE = -1.6; 
+      
+      // Sann Nord-rotasjon fra Revit-kompasset ditt
       const BYGG_ROTASJON_NORD = 31.75; 
 
       // Eksakte forskyvninger fra Revit-nullpunktet ditt (i meter)
@@ -58,16 +63,29 @@
           
           bygningsGruppe = new THREE.Group();
           
-          // 1. Trekk fra Revit-origo forskyvningen
+          // ==========================================================
+          // KRITISK AKSE-FLIP: Tvinger kote 0.00 til å ligge flatt!
+          // ==========================================================
+          // Vi ruller modellen 90 grader slik at loddrette flater blir liggende horisontalt
+          modell.rotation.x = -Math.PI / 2; 
+          
+          // Nå flytter vi modellen i forhold til Revit-offsettene, 
+          // og tar høyde for at aksene er flippet om (Z blir til Y i Three.js)
           modell.position.set(-REVIT_OFFSET_X, 0, -REVIT_OFFSET_Y);
           bygningsGruppe.add(modell);
           
-          // 2. Roter flatt rundt det korrekte hjørneankeret
+          // Setter Sann Nord-rotasjonen rundt den ekte, vertikale opp-aksen
           bygningsGruppe.rotation.set(0, 0, 0);
           bygningsGruppe.rotation.y = THREE.MathUtils.degToRad(BYGG_ROTASJON_NORD);
           
+          // Finn de reelle fysiske grensene til modellen etter at den ligger flatt
+          const boks = new THREE.Box3().setFromObject(bygningsGruppe);
+          
+          // Tvinger bunnen av modellen (kote 0.00) ned til lokal 0, slik at BYGG_HØYDE fungerer lineært
+          bygningsGruppe.position.y = -boks.min.y;
+          
           scene.add(bygningsGruppe);
-          console.log("Modellen er kalibrert og linsene er justert.");
+          console.log("Modellen er lagt flatt langs koteplanene.");
           
           opprettHjelpelinje();
           oppdaterByggPlassering();
@@ -99,7 +117,7 @@
         const meterNord = dLat * R;
         const meterØst = dLng * R * Math.cos(THREE.MathUtils.degToRad(kamPos.lat()));
 
-        // VIKTIG: Vi flytter kun bygningsgruppen, slik at 3D-kameraet står fjellstøtt i (0,0,0) sammen med Google
+        // Flytter hele den flate modellen geografisk i forhold til gata
         bygningsGruppe.position.set(meterØst, BYGG_HØYDE, -meterNord);
         
         updateCameraOrientation();
@@ -116,8 +134,7 @@
         directionalLight.position.set(30, 60, 30);
         scene.add(directionalLight);
 
-        // OPTIMALISERT LINSE (Near: 1.0, Far: 10000): Forhindrer at svære objekter blokkerer eller gjør skjermen mørk
-        camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 1.0, 10000);
+        camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 5000);
         
         renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
         renderer.setClearColor(0x000000, 0); 
