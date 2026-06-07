@@ -2,7 +2,7 @@
 <html>
   <head>
     <meta charset="utf-8">
-    <title>Tangen 7 - Endelig Georeferert</title>
+    <title>Tangen 7 - Georeferert Street View</title>
     <style>
       html, body { 
         height: 100%; 
@@ -66,7 +66,7 @@
     <div id="control-panel">
       <div><b>Ankerpunkt GPS:</b> <span id="txt-lat" class="coordinate-box">Søker...</span>, <span id="txt-lng" class="coordinate-box">Søker...</span></div>
       <div>|</div>
-      <div><b>Høyde (kote):</b> <span id="txt-høyde" class="coordinate-box">-18.0m</span></div>
+      <div><b>Høyde (kote):</b> <span id="txt-høyde" class="coordinate-box">-3.5m</span></div>
     </div>
 
     <div id="instructions">
@@ -80,11 +80,11 @@
     <div id="map-container"></div>
 
     <script>
-      // Startposisjon kalibrert i forhold til Civil 3D-krysset ditt
-      let ankerGPS = { lat: 59.000020, lng: 5.659220 }; 
+      // Flyttet bittelitt sør-øst for å treffe kaiområdet perfekt med en gang
+      let ankerGPS = { lat: 58.999980, lng: 5.659320 }; 
       
-      // TVINGES NED: Satt til -18.0 meter for å bringe oversiden av modellen ned til bakken
-      let byggHøyde = -18.0; 
+      // HØYDE: Justert til -3.5 meter slik at volumene reiser seg stabilt opp over asfalten
+      let byggHøyde = -3.5; 
       const BYGG_ROTASJON_NORD = 31.75; 
 
       const REVIT_OFFSET_X = 251.092; 
@@ -98,7 +98,7 @@
         panorama = new google.maps.StreetViewPanorama(
           document.getElementById("streetview-container"), {
             position: kameraStartGPS,
-            pov: { heading: 140, pitch: -2 }, 
+            pov: { heading: 140, pitch: 0 }, 
             zoom: 1,
             visible: true
           }
@@ -140,21 +140,19 @@
           bygningsGruppe = new THREE.Group();
           
           // ==========================================================
-          // KRITISK ENDRING: VI FLIPPER BYGGET SÅ DET DET PEKER NED
+          // OPPREIST RETNING: BYGGET SKYTER OPP I LUFTA IGJEN
           // ==========================================================
-          // Vi snur modellen 180 grader (Math.PI) rundt X-aksen så taket/veggene kommer til syne
-          modell.rotation.set(Math.PI, 0, 0);
-          
-          // Justerer posisjonen i forhold til de reelle målene dine
+          // Vi fjerner 180-graders flippen og holder rotasjonen helt ren.
+          modell.rotation.set(0, 0, 0);
           modell.position.set(-REVIT_OFFSET_X, 0, -REVIT_OFFSET_Y);
           bygningsGruppe.add(modell);
           
-          // Ren, flat kompassretning rundt det sanne ankerpunktet
+          // Vrir hele gruppen flatt rundt kompassretningen
           bygningsGruppe.rotation.set(0, 0, 0);
           bygningsGruppe.rotation.y = THREE.MathUtils.degToRad(BYGG_ROTASJON_NORD);
           
           scene.add(bygningsGruppe);
-          console.log("Modellen er snudd, lagt flatt og klargjort.");
+          console.log("Modellen er rettet opp og klar på bakken.");
           
           oppdaterPosisjonOgKart();
           setupKeyboardControls();
@@ -230,8 +228,8 @@
           if (e.key === 'ArrowLeft') { ankerGPS.lng -= stegGPS; e.preventDefault(); }
           if (e.key === 'ArrowRight') { ankerGPS.lng += stegGPS; e.preventDefault(); }
           
-          if (e.key === 'PageUp') { byggHøyde += 0.5; e.preventDefault(); }
-          if (e.key === 'PageDown') { byggHøyde -= 0.5; e.preventDefault(); }
+          if (e.key === 'PageUp') { byggHøyde += 0.2; e.preventDefault(); }
+          if (e.key === 'PageDown') { byggHøyde -= 0.2; e.preventDefault(); }
 
           oppdaterPosisjonOgKart();
         });
@@ -273,16 +271,4 @@
       }
 
       function onWindowResize() {
-        camera.aspect = (window.innerWidth / 2) / window.innerHeight;
-        camera.updateProjectionMatrix();
-        renderer.setSize(window.innerWidth / 2, window.innerHeight);
-      }
-
-      function animate() {
-        requestAnimationFrame(animate);
-        renderer.render(scene, camera);
-      }
-    </script>
-    <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyAKCY3L1KdO4oqxu_JVlCBkMCVHAcQOWNw&callback=initPlatform" async defer></script>
-  </body>
-</html>
+        camera.aspect = (window.innerWidth / 2)
