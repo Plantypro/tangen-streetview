@@ -38,14 +38,7 @@
 
         setupThreeJS();
 
-        // 2. Vi lager en ENORM rød test-boks (5x5x5 meter) plassert 8 meter foran deg
-        const boksGeometri = new THREE.BoxGeometry(5, 5, 5);
-        const boksMateriale = new THREE.MeshBasicMaterial({ color: 0xff0000, depthTest: true });
-        const testBoks = new THREE.Mesh(boksGeometri, boksMateriale);
-        testBoks.position.set(0, 0, -8); 
-        scene.add(testBoks);
-
-        // 3. Konfigurer GLTF/DRACO-loader
+        // 2. Konfigurer GLTF/DRACO-loader for å hente den nye eksporten din
         const loader = new THREE.GLTFLoader();
         const dracoLoader = new THREE.DRACOLoader();
         dracoLoader.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.6/');
@@ -54,14 +47,24 @@
         loader.load('25012 Tangen 7 - Nybygg.glb', function (gltf) {
           modell = gltf.scene;
           
-          // Siden du har "Relocate to 0", tvinger vi den 12 meter frem i gata så den står rett bak boksen
-          modell.position.set(0, 0, -12); 
+          // INTELLIGENT BOKS-BREGNING: Vi tvinger modellen opp på bakken
+          const boks = new THREE.Box3().setFromObject(modell);
+          const senter = new THREE.Vector3();
+          boks.getCenter(senter);
           
-          // Juster rotasjon
+          // Nullstiller eventuelle skjevheter eller etasjehøyder fra Revit-eksporten
+          modell.position.x += (modell.position.x - senter.x);
+          modell.position.y += (modell.position.y - boks.min.y); // Tvinger bunnen av huset til å være på 0 (asfalten)
+          modell.position.z += (modell.position.z - senter.z);
+          
+          // POSISJONERING: Plasserer huset 18 meter foran deg i gata, og hever det 0.5 meter for margin
+          modell.position.set(0, 0.5, -18); 
+          
+          // JORD-ROTASJON: Juster dette tallet (akkurat nå 45 grader) for å vri huset riktig vei på tomta
           modell.rotation.y = Math.PI * (45 / 180); 
           
           scene.add(modell);
-          console.log("Revit-modellen er lagt til i scenen!");
+          console.log("Revit-modellen er plassert og bunnutjevnet!");
           animate();
         }, undefined, function (error) {
           console.error('Kunne ikke laste 3D-modellen:', error);
@@ -75,22 +78,20 @@
         const container = document.getElementById("streetview-container");
         scene = new THREE.Scene();
         
-        // Ekstra kraftig belysning
+        // Godt og jevnt dagslys på bygningskroppen
         const ambientLight = new THREE.AmbientLight(0xffffff, 2.0);
         scene.add(ambientLight);
         
         const directionalLight = new THREE.DirectionalLight(0xffffff, 1.5);
-        directionalLight.position.set(10, 50, 15);
+        directionalLight.position.set(20, 50, 20);
         scene.add(directionalLight);
 
-        // Nærgrensen (near) er satt til 0.1 for å hindre at ting rett foran kameraet blir borte
         camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
         
         renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
-        renderer.setClearColor(0x000000, 0); // Gjør bakgrunnen 100 % gjennomsiktig
+        renderer.setClearColor(0x000000, 0); 
         renderer.setSize(window.innerWidth, window.innerHeight);
         
-        // KRITISK: Tvinger 3D-laget til å ligge absolutt øverst (z-index: 10) over Google Maps-bildet
         renderer.domElement.style.position = 'absolute';
         renderer.domElement.style.top = '0';
         renderer.domElement.style.left = '0';
