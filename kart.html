@@ -107,4 +107,70 @@
       function oppdaterByggPlassering() {
         if (!panorama || !masterGruppe) return;
 
-        // 1. Hent kamera
+        // 1. Hent kameraets nåværende posisjon
+        const kamPos = panorama.getPosition();
+        const kamMeter = gpsTilMeter(kamPos.lat(), kamPos.lng());
+        
+        // 2. Hent modellens sanne posisjon
+        const origoMeter = utmTilMeter(CIVIL3D_ORIGO.east, CIVIL3D_ORIGO.north);
+
+        // 3. Regn ut den nøyaktige forskyvningen i meter mellom deg og modellen
+        const deltaX = origoMeter.x - kamMeter.x;
+        const deltaZ = origoMeter.y - kamMeter.y;
+
+        // 4. Nagler koordinatene fast til jordskorpa
+        masterGruppe.position.set(deltaX, KOTE_NULL_HØYDE, -deltaZ);
+        
+        updateCameraOrientation();
+      }
+
+      function setupThreeJS() {
+        const container = document.getElementById("streetview-container");
+        scene = new THREE.Scene();
+        
+        // Setter opp godt arbeidslys på fasadene
+        const ambientLight = new THREE.AmbientLight(0xffffff, 2.5);
+        scene.add(ambientLight);
+        
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 1.5);
+        directionalLight.position.set(30, 60, 30);
+        scene.add(directionalLight);
+
+        camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 5000);
+        
+        renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+        renderer.setClearColor(0x000000, 0); 
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        
+        renderer.domElement.style.position = 'absolute';
+        renderer.domElement.style.top = '0';
+        renderer.domElement.style.left = '0';
+        renderer.domElement.style.zIndex = '10';
+        renderer.domElement.style.pointerEvents = 'none'; 
+        
+        container.appendChild(renderer.domElement);
+        window.addEventListener('resize', onWindowResize);
+      }
+
+      function updateCameraOrientation() {
+        if (!panorama || !camera) return;
+        const pov = panorama.getPov();
+        camera.rotation.set(THREE.MathUtils.degToRad(pov.pitch || 0), -THREE.MathUtils.degToRad(pov.heading || 0), 0, 'YXZ');
+        camera.fov = 180 / Math.pow(2, panorama.getZoom() || 1);
+        camera.updateProjectionMatrix();
+      }
+
+      function onWindowResize() {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+      }
+
+      function animate() {
+        requestAnimationFrame(animate);
+        renderer.render(scene, camera);
+      }
+    </script>
+    <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyAKCY3L1KdO4oqxu_JVlCBkMCVHAcQOWNw&callback=initPlatform" async defer></script>
+  </body>
+</html>
