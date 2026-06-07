@@ -2,7 +2,7 @@
 <html>
   <head>
     <meta charset="utf-8">
-    <title>Tangen 7 - Presisjonskalibrering</title>
+    <title>Tangen 7 - Direkte Tomtejustering</title>
     <style>
       html, body { 
         height: 100%; 
@@ -67,35 +67,37 @@
   <body>
 
     <div id="control-panel">
-      <div><b>Siste handling:</b> <span id="txt-status" style="color: #00ffaa;">Klar</span></div>
+      <div><b>Handling:</b> <span id="txt-status" style="color: #00ffaa;">Klar</span></div>
       <div>|</div>
       <div><b>Høyde (kote):</b> <span id="txt-høyde" class="coordinate-box">-3.50m</span></div>
       <div>|</div>
-      <div><b>Anker GPS:</b> <span id="txt-lat" class="coordinate-box">59.000080</span>, <span id="txt-lng" class="coordinate-box">5.659320</span></div>
+      <div><b>Tomt Senter GPS:</b> <span id="txt-lat" class="coordinate-box">59.000210</span>, <span id="txt-lng" class="coordinate-box">5.659510</span></div>
     </div>
 
     <div id="instructions">
-      <b>Låst tastaturkontroll (Ingen taster må holdes inne):</b><br>
-      • Klikk hvor som helst på skjermen.<br>
-      • <b>Piltastene</b> flytter modellen med nøyaktig <b>1.0 meter</b> av gangen.<br>
-      • <b>PageUp / PageDown</b> endrer høyden med nøyaktig <b>10 cm</b> av gangen.
+      <b>Direkte Tomtejustering:</b><br>
+      • Klikk en gang på skjermen for å aktivere vinduet.<br>
+      • Bruk <b>Piltastene</b> for å flytte det blå omrisset og 3D-bygget nøyaktig <b>1.0 meter</b> av gangen.<br>
+      • Bruk <b>PageUp / PageDown</b> for å heve/senke koteplanet med nøyaktig <b>10 cm</b> av gangen.
     </div>
 
     <div id="streetview-container"></div>
     <div id="map-container"></div>
 
     <script>
-      let origoGPS = { lat: 59.000080, lng: 5.659320 }; 
+      // NY ABSOLUTT INPUT: Vi starter direkte i sentrum av kaiområdet ditt (der det røde omrisset var)
+      let tomtSenterGPS = { lat: 59.000210, lng: 5.659510 }; 
       let globalHøyde = -3.50; 
       const CIVIL3D_ROTASJON_NORD = 31.75; 
 
+      // De faste, georefererte målene fra Civil 3D-merket ditt til bygget
       const REVIT_OFFSET_X = 251.092; 
       const REVIT_OFFSET_Y = 100.559; 
 
       const kameraStartGPS = { lat: 59.000383, lng: 5.659569 }; 
       const R_JORDA = 6378137;
 
-      let panorama, map, origoMarkør, bygg2DOmriss, scene, camera, renderer, bygningsGruppe;
+      let panorama, map, senterMarkør, bygg2DOmriss, scene, camera, renderer, bygningsGruppe;
 
       function gpsTilMeter(lat, lng) {
         const x = lng * Math.PI / 180 * R_JORDA;
@@ -114,18 +116,20 @@
         );
 
         map = new google.maps.Map(document.getElementById("map-container"), {
-          center: { lat: 59.000150, lng: 5.659500 },
-          zoom: 18,
+          center: tomtSenterGPS,
+          zoom: 19,
           mapTypeId: 'satellite'
         });
 
-        origoMarkør = new google.maps.Marker({
-          position: origoGPS,
+        // Plasserer den røde markøren midt i det blå tomteområdet
+        senterMarkør = new google.maps.Marker({
+          position: tomtSenterGPS,
           map: map,
           draggable: true,
-          title: "Civil 3D Origo"
+          title: "Byggets midtpunkt"
         });
 
+        // Det blå 2D-omrisset på kaikanten
         bygg2DOmriss = new google.maps.Polygon({
           strokeColor: "#00aaff",
           strokeOpacity: 0.8,
@@ -147,7 +151,10 @@
           modell.scale.set(1, 1, 1);
           
           bygningsGruppe = new THREE.Group();
-          modell.rotation.set(0, 0, 0);
+          
+          // Vi trekker fra Civil 3D-offsetten her, slik at modellens 
+          // rotasjonssenter blir liggende nøyaktig i midten av bygget ditt!
+          modell.position.set(-REVIT_OFFSET_X, 0, -REVIT_OFFSET_Y);
           bygningsGruppe.add(modell);
           
           bygningsGruppe.rotation.set(0, 0, 0);
@@ -155,16 +162,14 @@
           
           scene.add(bygningsGruppe);
           
-          opprettHjelpelinje();
           oppdaterGeometriPosisjon();
           setupKeyboardControls();
           animate();
         });
 
-        origoMarkør.addListener('drag', function(event) {
-          origoGPS.lat = event.latLng.lat();
-          origoGPS.lng = event.latLng.lng();
-          document.getElementById("txt-status").innerText = "Drar markør via kart";
+        senterMarkør.addListener('drag', function(event) {
+          tomtSenterGPS.lat = event.latLng.lat();
+          tomtSenterGPS.lng = event.latLng.lng();
           oppdaterGeometriPosisjon();
         });
 
@@ -172,40 +177,27 @@
         panorama.addListener('zoom_changed', () => updateCameraOrientation());
       }
 
-      function opprettHjelpelinje() {
-        const materiale = new THREE.LineBasicMaterial({ color: 0xff0000, linewidth: 4 });
-        const punkter = [];
-        punkter.push(new THREE.Vector3(0, -20, 0));
-        punkter.push(new THREE.Vector3(0, 100, 0)); 
-        const geometri = new THREE.BufferGeometry().setFromPoints(punkter);
-        const linje = new THREE.Line(geometri, materiale);
-        scene.add(linje);
-      }
-
       function oppdaterGeometriPosisjon() {
-        document.getElementById("txt-lat").innerText = origoGPS.lat.toFixed(6);
-        document.getElementById("txt-lng").innerText = origoGPS.lng.toFixed(6);
+        document.getElementById("txt-lat").innerText = tomtSenterGPS.lat.toFixed(6);
+        document.getElementById("txt-lng").innerText = tomtSenterGPS.lng.toFixed(6);
         document.getElementById("txt-høyde").innerText = globalHøyde.toFixed(2) + "m";
 
+        // Her regner vi ut 3D-posisjonen i gata direkte ut i fra byggets midtpunkt!
         if (panorama && bygningsGruppe) {
           const kamPos = panorama.getPosition();
           const R = 6378137; 
-          const dLat = THREE.MathUtils.degToRad(origoGPS.lat - kamPos.lat());
-          const dLng = THREE.MathUtils.degToRad(origoGPS.lng - kamPos.lng());
+          const dLat = THREE.MathUtils.degToRad(tomtSenterGPS.lat - kamPos.lat());
+          const dLng = THREE.MathUtils.degToRad(tomtSenterGPS.lng - kamPos.lng());
           const meterNord = dLat * R;
           const meterØst = dLng * R * Math.cos(THREE.MathUtils.degToRad(kamPos.lat()));
           
           bygningsGruppe.position.set(meterØst, globalHøyde, -meterNord);
         }
 
+        // Tegner den blå polygonen sentrert rundt den nye posisjonen
         const vinkelRad = THREE.MathUtils.degToRad(CIVIL3D_ROTASJON_NORD);
         const latMeter = 111132; 
-        const lngMeter = 40075000 * Math.cos(THREE.MathUtils.degToRad(origoGPS.lat)) / 360;
-
-        const senter2D = {
-          lat: origoGPS.lat + ((REVIT_OFFSET_Y * Math.cos(vinkelRad) + REVIT_OFFSET_X * Math.sin(vinkelRad)) / latMeter),
-          lng: origoGPS.lng + ((-REVIT_OFFSET_Y * Math.sin(vinkelRad) + REVIT_OFFSET_X * Math.cos(vinkelRad)) / lngMeter)
-        };
+        const lngMeter = 40075000 * Math.cos(THREE.MathUtils.degToRad(tomtSenterGPS.lat)) / 360;
 
         const l = 155; 
         const b = 58; 
@@ -221,57 +213,53 @@
           const rx = h.dx * Math.cos(vinkelRad) - h.dy * Math.sin(vinkelRad);
           const ry = h.dx * Math.sin(vinkelRad) + h.dy * Math.cos(vinkelRad);
           return {
-            lat: senter2D.lat + (ry / latMeter),
-            lng: senter2D.lng + (rx / lngMeter)
+            lat: tomtSenterGPS.lat + (ry / latMeter),
+            lng: tomtSenterGPS.lng + (rx / lngMeter)
           };
         });
 
         bygg2DOmriss.setPaths(polygonStier);
-        origoMarkør.setPosition(origoGPS);
+        senterMarkør.setPosition(tomtSenterGPS);
       }
 
-      // ==========================================================
-      // STRIDSKLAR TASTASTURSTYRING: 1 METER OG 10 CM
-      // ==========================================================
       function setupKeyboardControls() {
-        // Vi tvinger lytteren til å overvåke hele vinduet (window) uansett hvor Google har fokus
         window.addEventListener('keydown', function(e) {
-          // Matematisk omregning fra meter til GPS-grader basert på Tangen 7 sin breddegrad
+          // Konverterer nøyaktig 1.0 meter til GPS-grader for din posisjon
           const enMeterILat = 1.0 / 111132;
-          const enMeterILng = 1.0 / (40075000 * Math.cos(THREE.MathUtils.degToRad(origoGPS.lat)) / 360);
+          const enMeterILng = 1.0 / (40075000 * Math.cos(THREE.MathUtils.degToRad(tomtSenterGPS.lat)) / 360);
           
           let loggTekst = "";
 
           if (e.key === 'ArrowUp') { 
-            origoGPS.lat += enMeterILat; 
-            loggTekst = "Flyttet 1 meter Nord";
+            tomtSenterGPS.lat += enMeterILat; 
+            loggTekst = "Flyttet 1m Nord";
             e.preventDefault(); 
           }
           if (e.key === 'ArrowDown') { 
-            origoGPS.lat -= enMeterILat; 
-            loggTekst = "Flyttet 1 meter Sør";
+            tomtSenterGPS.lat -= enMeterILat; 
+            loggTekst = "Flyttet 1m Sør";
             e.preventDefault(); 
           }
           if (e.key === 'ArrowLeft') { 
-            origoGPS.lng -= enMeterILng; 
-            loggTekst = "Flyttet 1 meter Vest";
+            tomtSenterGPS.lng -= enMeterILng; 
+            loggTekst = "Flyttet 1m Vest";
             e.preventDefault(); 
           }
           if (e.key === 'ArrowRight') { 
-            origoGPS.lng += enMeterILng; 
-            loggTekst = "Flyttet 1 meter Øst";
+            tomtSenterGPS.lng += enMeterILng; 
+            loggTekst = "Flyttet 1m Øst";
             e.preventDefault(); 
           }
           
           // Heving og senking med nøyaktig 10 cm (0.10 meter)
           if (e.key === 'PageUp') { 
             globalHøyde += 0.10; 
-            loggTekst = "Hevet 10 cm";
+            loggTekst = "Hevet 10cm";
             e.preventDefault(); 
           }
           if (e.key === 'PageDown') { 
             globalHøyde -= 0.10; 
-            loggTekst = "Senket 10 cm";
+            loggTekst = "Senket 10cm";
             e.preventDefault(); 
           }
 
@@ -279,7 +267,7 @@
             document.getElementById("txt-status").innerText = loggTekst;
             oppdaterGeometriPosisjon();
           }
-        }, true); // 'true' gjør at koden fanger opp trykket før Google Street View rekker å stjele det
+        }, true); 
       }
 
       function setupThreeJS() {
@@ -328,6 +316,5 @@
         renderer.render(scene, camera);
       }
     </script>
-    <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyAKCY3L1KdO4oqxu_JVlCBkMCVHAcQOWNw&callback=initPlatform" async defer></script>
   </body>
 </html>
