@@ -2,7 +2,7 @@
 <html>
   <head>
     <meta charset="utf-8">
-    <title>Tangen 7 - Georeferert Street View</title>
+    <title>Tangen 7 - Finjustert Street View</title>
     <style>
       html, body, #streetview-container { 
         height: 100%; 
@@ -21,15 +21,14 @@
 
     <script>
       // ==========================================================
-      // GEOGRAFISKE DATA FRA REVIT (TANGEN 7)
+      // GEOGRAFISKE DATA FRA REVIT (TANGEN 7) - FINJUSTERT
       // ==========================================================
-      // Justert GPS for å plassere aksekrysset (A / S1) midt på den rette plenen
-      const BYGG_GPS = { lat: 59.000300, lng: 5.659330 }; 
+      // Justert for å flytte bygget lenger SØR og lenger VEST på tomta
+      const BYGG_GPS = { lat: 59.000250, lng: 5.659240 }; 
       
-      // Siden veien ligger på +2.3m og kameraet er i øyehøyde, justerer vi det globale nivået:
-      const BYGG_HØYDE = -3.9; 
+      // SENKET HØYDEPLAN: Endret fra -3.9 til -6.5 for å dra den lenger ned
+      const BYGG_HØYDE = -6.5; 
       
-      // Sann Nord-rotasjon fra Revit-kompasset ditt
       const BYGG_ROTASJON_NORD = 31.75; 
 
       // Eksakte forskyvninger fra Revit-nullpunktet ditt (i meter)
@@ -59,25 +58,20 @@
         
         loader.load('25012 Tangen 7 - Nybygg.glb', function (gltf) {
           const modell = gltf.scene;
-          
-          // MÅLESTOKK (Beholdes 1:1 meter fra Leia)
           modell.scale.set(1, 1, 1);
           
           bygningsGruppe = new THREE.Group();
           
-          // ==========================================================
-          // STRØMLINJEFORMET PLASSERING: INGEN MANUELL ROTASJON!
-          // ==========================================================
-          // Vi flytter modellen basert på de eksakte målene dine før kompass-vridningen skjer
+          // Posisjonering i forhold til Revit-origo
           modell.position.set(-REVIT_OFFSET_X, 0, -REVIT_OFFSET_Y);
           bygningsGruppe.add(modell);
           
-          // Vrir hele gruppen flatt rundt aksekrysset i forhold til Sann Nord
+          // Sann Nord-rotasjon rundt vertikal akse
           bygningsGruppe.rotation.set(0, 0, 0);
           bygningsGruppe.rotation.y = THREE.MathUtils.degToRad(BYGG_ROTASJON_NORD);
           
           scene.add(bygningsGruppe);
-          console.log("Modellen er lastet i 1:1 med korrekte native akser på Tangen 7!");
+          console.log("Modellen er flyttet i posisjon Sør-Vest-Ned.");
           
           opprettHjelpelinje();
           oppdaterByggPlassering();
@@ -91,7 +85,7 @@
         const materiale = new THREE.LineBasicMaterial({ color: 0xff0000 });
         const punkter = [];
         punkter.push(new THREE.Vector3(0, -10, 0));
-        punkter.push(new THREE.Vector3(0, 30, 0)); // Rød stang på aksekrysset
+        punkter.push(new THREE.Vector3(0, 30, 0)); 
         const geometri = new THREE.BufferGeometry().setFromPoints(punkter);
         const linje = new THREE.Line(geometri, materiale);
         scene.add(linje);
@@ -109,7 +103,6 @@
         const meterNord = dLat * R;
         const meterØst = dLng * R * Math.cos(THREE.MathUtils.degToRad(kamPos.lat()));
 
-        // Plasserer aksekrysset stabilt på tomta
         bygningsGruppe.position.set(meterØst, BYGG_HØYDE, -meterNord);
         
         updateCameraOrientation();
