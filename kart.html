@@ -2,7 +2,7 @@
 <html>
   <head>
     <meta charset="utf-8">
-    <title>Tangen 7 - Finjustert Street View</title>
+    <title>Tangen 7 - Absolutt Georeferert</title>
     <style>
       html, body, #streetview-container { 
         height: 100%; 
@@ -21,23 +21,49 @@
 
     <script>
       // ==========================================================
-      // GEOGRAFISKE DATA FRA REVIT (TANGEN 7) - FINJUSTERT
+      // GEOGRAFISKE SPESIFIKASJONER FRA REVIT (UTM-32N / EPSG:25832)
       // ==========================================================
-      // Justert for å flytte bygget lenger SØR og lenger VEST på tomta
-      const BYGG_GPS = { lat: 59.000250, lng: 5.659240 }; 
+      // De eksakte koordinatene til Prosjekt-Nullpunktet fra tegningen din:
+      const REVIT_ORIGO_UTM = { east: 307995.6157, north: 6544604.4177 };
       
-      // SENKET HØYDEPLAN: Endret fra -3.9 til -6.5 for å dra den lenger ned
-      const BYGG_HØYDE = -6.5; 
-      
+      // Forskyvning av selve bygningskroppen (Aksekryss A / S1) internt i modellen din (i meter)
+      const BYGG_OFFSET_X = 251.092;
+      const BYGG_OFFSET_Y = 100.559;
+
+      // Sann Nord-rotasjon fra Revit
       const BYGG_ROTASJON_NORD = 31.75; 
 
-      // Eksakte forskyvninger fra Revit-nullpunktet ditt (i meter)
-      const REVIT_OFFSET_X = 251.092; 
-      const REVIT_OFFSET_Y = 100.559; 
-
+      // Startposisjon for Street View ute i veien (Tangen 7)
       const kameraStartGPS = { lat: 59.000383, lng: 5.659569 }; 
 
+      // Jordens radius brukt til Web Mercator-projeksjon (EPSG:3857)
+      const R_JORDA = 6378137;
+
       let panorama, scene, camera, renderer, bygningsGruppe;
+
+      // Hjelpefunksjon for å konvertere GPS (WGS84) til flate meterkoordinater (Web Mercator)
+      function gpsTilMeter(lat, lng) {
+        const x = lng * Math.PI / 180 * R_JORDA;
+        const y = Math.log(Math.tan((90 + lat) * Math.PI / 360)) * R_JORDA;
+        return { x: x, y: y };
+      }
+
+      // Hjelpefunksjon for å konvertere UTM-32N direkte til Web Mercator-skalaen
+      // Siden Tangen 7 ligger rundt 59°N, kalibrerer vi forholdet mellom UTM-aksene og Mercator-aksene
+      function utmTilMeter(east, north) {
+        // Sentralmeridian for UTM sone 32N er 9 grader øst
+        const lngOrigo = 9.0;
+        const latOrigo = 0.0;
+        const meterOrigo = gpsTilMeter(latOrigo, lngOrigo);
+        
+        // Beregner skala-korreksjon for 59 grader nord
+        const skremsfaktor = 1 / Math.cos(59.0003 * Math.PI / 180);
+        
+        // Transformerer og skalerer UTM-aksene slik at de matcher Three.js-verdenen lineært
+        const x = (east - 500000) * skremsfaktor + meterOrigo.x;
+        const y = north * skremsfaktor;
+        return { x: x, y: y };
+      }
 
       function initPlatform() {
         panorama = new google.maps.StreetViewPanorama(
@@ -62,18 +88,17 @@
           
           bygningsGruppe = new THREE.Group();
           
-          // Posisjonering i forhold til Revit-origo
-          modell.position.set(-REVIT_OFFSET_X, 0, -REVIT_OFFSET_Y);
+          // 1. Plasserer modellen slik at det interne Revit-nullpunktet lander nøyaktig i gruppens (0,0,0)
+          modell.position.set(-BYGG_OFFSET_X, 0, -BYGG_OFFSET_Y);
           bygningsGruppe.add(modell);
           
-          // Sann Nord-rotasjon rundt vertikal akse
+          // 2. Roterer modellen flatt rundt sitt eget georefererte 0-punkt i forhold til Sann Nord
           bygningsGruppe.rotation.set(0, 0, 0);
           bygningsGruppe.rotation.y = THREE.MathUtils.degToRad(BYGG_ROTASJON_NORD);
           
           scene.add(bygningsGruppe);
-          console.log("Modellen er flyttet i posisjon Sør-Vest-Ned.");
+          console.log("Modellen er låst til sitt absolutte geodetiske referansepunkt.");
           
-          opprettHjelpelinje();
           oppdaterByggPlassering();
           animate();
         }, undefined, function (error) {
@@ -81,29 +106,32 @@
         });
       }
 
-      function opprettHjelpelinje() {
-        const materiale = new THREE.LineBasicMaterial({ color: 0xff0000 });
-        const punkter = [];
-        punkter.push(new THREE.Vector3(0, -10, 0));
-        punkter.push(new THREE.Vector3(0, 30, 0)); 
-        const geometri = new THREE.BufferGeometry().setFromPoints(punkter);
-        const linje = new THREE.Line(geometri, materiale);
-        scene.add(linje);
-      }
-
+      // DEN NYE ABSOLUTTE PLASSERINGSFUNKSJONEN: Nagler modellen fast til jordskorpa
       function oppdaterByggPlassering() {
         if (!panorama || !bygningsGruppe) return;
 
+        // 1. Hent gjeldende GPS-posisjon til Street View-kameraet
         const kamPos = panorama.getPosition();
-        const R = 6378137; 
+        const kamLat = kamPos.lat();
+        const kamLng = kamPos.lng();
 
-        const dLat = THREE.MathUtils.degToRad(BYGG_GPS.lat - kamPos.lat());
-        const dLng = THREE.MathUtils.degToRad(BYGG_GPS.lng - kamPos.lng());
+        // 2. Konverter kameraets posisjon til absolutte verdens-meter
+        const kamMeter = gpsTilMeter(kamLat, kamLng);
 
-        const meterNord = dLat * R;
-        const meterØst = dLng * R * Math.cos(THREE.MathUtils.degToRad(kamPos.lat()));
+        // 3. Konverter Revit sitt ekte 0-punkt (UTM) til absolutte verdens-meter
+        const origoMeter = utmTilMeter(REVIT_ORIGO_UTM.east, REVIT_ORIGO_UTM.north);
 
-        bygningsGruppe.position.set(meterØst, BYGG_HØYDE, -meterNord);
+        // 4. Regn ut den nøyaktige forskyvningen mellom deg og 0-punktet i den virkelige verden
+        const deltaX = origoMeter.x - kamMeter.x;
+        const deltaZ = origoMeter.y - kamMeter.y;
+
+        // 5. Finn den korrekte høyden (Kote 0.00). Siden kote 0.00 er havnivå, 
+        // og terrenget ved Tangen 7 ligger ca. 2.5 meter over havet, og kameraet er 1.6 meter over veien,
+        // setter vi en absolutt kote-høyde her (justeres opp/ned ved behov)
+        const KOTE_NULL_HØYDE = -4.1; 
+
+        // Lås scenegruppen fast. Nå vil ikke modellen flytte på seg når du går!
+        bygningsGruppe.position.set(deltaX, KOTE_NULL_HØYDE, -deltaZ);
         
         updateCameraOrientation();
       }
