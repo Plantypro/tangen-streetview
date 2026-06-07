@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>Tangen 7 - Google Street View</title>
+    <style>
+      html, body, #streetview-container { 
+        height: 100%; 
+        margin: 0; 
+        padding: 0; 
+        background-color: #000;
+        overflow: hidden;
+      }
+    </style>
+    <script src="https://unpkg.com/three@0.147.0/build/three.min.js"></script>
+    <script src="https://unpkg.com/three@0.147.0/examples/js/loaders/GLTFLoader.js"></script>
+    <script src="https://unpkg.com/three@0.147.0/examples/js/loaders/DRACOLoader.js"></script>
+  </head>
+  <body>
+    <div id="streetview-container"></div>
+
+    <script>
+      // 2. GPS-KOORDINATER FOR TANGEN, RANDABERG
+      const prosjektPosisjon = { lat: 59.000383, lng: 5.659569 }; 
+
+      let panorama, scene, camera, renderer, modell;
+
+      function initPlatform() {
+        // 3. Setter opp Street View via stabilt JavaScript-objekt
+        panorama = new google.maps.StreetViewPanorama(
+          document.getElementById("streetview-container"), {
+            position: prosjektPosisjon,
+            pov: { heading: 180, pitch: 0 }, 
+            zoom: 1,
+            visible: true
+          }
+        );
+
+        // 4. Sett opp Three.js overflatelaget
+        setupThreeJS();
+
+        // 5. Konfigurer GLTF-loaderen med DRACO-dekoding for Revit-filen din
+        const loader = new THREE.GLTFLoader();
+        const dracoLoader = new THREE.DRACOLoader();
+        dracoLoader.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.6/');
+        loader.setDRACOLoader(dracoLoader);
+        
+        // 6. Last inn Revit-modellen din
+        loader.load('25012 Tangen 7 - Nybygg.glb', function (gltf) {
+          modell = gltf.scene;
+          modell.position.set(0, 0, 0); 
+          modell.rotation.y = Math.PI * (45 / 180); 
+          
+          scene.add(modell);
+          animate();
+        }, undefined, function (error) {
+          console.error('Kunne ikke laste 3D-modellen:', error);
+        });
+
+        // 7. Synkroniserer kameraet når du ser deg rundt
+        panorama.addListener('pov_changed', () => {
+          updateCameraOrientation();
+        });
+        
+        panorama.addListener('zoom_changed', () => {
+          updateCameraOrientation();
+        });
+      }
+
+      function setupThreeJS() {
+        const container = document.getElementById("streetview-container");
+        scene = new THREE.Scene();
+        
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.9);
+        scene.add(ambientLight);
+        
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.7);
+        directionalLight.position.set(10, 25, 15);
+        scene.add(directionalLight);
+
+        camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 1, 1000);
+        
+        renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.domElement.style.position = 'absolute';
+        renderer.domElement.style.top = '0';
+        renderer.domElement.style.left = '0';
+        renderer.domElement.style.pointerEvents = 'none'; 
+        container.appendChild(renderer.domElement);
+
+        window.addEventListener('resize', onWindowResize);
+        setTimeout(updateCameraOrientation, 500);
+      }
+
+      function updateCameraOrientation() {
+        if (!panorama || !camera) return;
+        
+        const pov = panorama.getPov();
+        if (!pov) return;
+
+        const headingRad = THREE.MathUtils.degToRad(pov.heading || 0);
+        const pitchRad = THREE.MathUtils.degToRad(pov.pitch || 0);
+
+        camera.rotation.set(pitchRad, -headingRad, 0, 'YXZ');
+        camera.fov = 180 / Math.pow(2, panorama.getZoom() || 1);
+        camera.updateProjectionMatrix();
+      }
+
+      function onWindowResize() {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+      }
+
+      function animate() {
+        requestAnimationFrame(animate);
+        renderer.render(scene, camera);
+      }
+    </script>
+    
+    <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyAKCY3L1KdO4oqxu_JVICbkMCVHAcQOWNw&callback=initPlatform" async defer></script>
+  </body>
+</html>
