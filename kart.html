@@ -20,13 +20,13 @@
     <div id="streetview-container"></div>
 
     <script>
-      // 2. GPS-KOORDINATER FOR TANGEN, RANDABERG
+      // GPS-KOORDINATER FOR TANGEN, RANDABERG
       const prosjektPosisjon = { lat: 59.000383, lng: 5.659569 }; 
 
       let panorama, scene, camera, renderer, modell;
 
       function initPlatform() {
-        // 3. Setter opp Street View via stabilt JavaScript-objekt
+        // Start Street View
         panorama = new google.maps.StreetViewPanorama(
           document.getElementById("streetview-container"), {
             position: prosjektPosisjon,
@@ -36,51 +36,63 @@
           }
         );
 
-        // 4. Sett opp Three.js overflatelaget
         setupThreeJS();
 
-        // 5. Konfigurer GLTF-loaderen med DRACO-dekoding for Revit-filen din
+        // 2. Hjelpe-objekt: Vi setter opp en rød test-kube midt i veien!
+        // Hvis du ser denne røde boksen, betyr det at 3D-motoren fungerer perfekt.
+        const boksGeometri = new THREE.BoxGeometry(2, 2, 2);
+        const boksMateriale = new THREE.MeshBasicMaterial({ color: 0xff0000, wireframe: false });
+        const testBoks = new THREE.Mesh(boksGeometri, boksMateriale);
+        testBoks.position.set(0, 0, -10); // Plassert 10 meter foran kameraet
+        scene.add(testBoks);
+
+        // 3. Konfigurer og last inn din Revit/GLB-modell
         const loader = new THREE.GLTFLoader();
         const dracoLoader = new THREE.DRACOLoader();
         dracoLoader.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.6/');
         loader.setDRACOLoader(dracoLoader);
         
-        // 6. Last inn Revit-modellen din
         loader.load('25012 Tangen 7 - Nybygg.glb', function (gltf) {
           modell = gltf.scene;
-          modell.position.set(0, 0, 0); 
+          
+          // SKALERING: Hvis modellen ble bitteliten fra Revit, tvinger vi den opp i størrelse her
+          // (Endre 1,1,1 til f.eks 10,10,10 hvis den er usynlig liten)
+          modell.scale.set(1, 1, 1);
+          
+          // POSISJON: Flytter modellen 15 meter foran kameraet, og løfter den 1.5 meter opp fra asfalten
+          modell.position.set(0, 1.5, -15); 
+          
+          // ROTASJON: Snu modellen (45 grader) på tomta
           modell.rotation.y = Math.PI * (45 / 180); 
           
           scene.add(modell);
+          console.log("3D-modell laster suksessfullt!");
           animate();
         }, undefined, function (error) {
           console.error('Kunne ikke laste 3D-modellen:', error);
         });
 
-        // 7. Synkroniserer kameraet når du ser deg rundt
-        panorama.addListener('pov_changed', () => {
-          updateCameraOrientation();
-        });
-        
-        panorama.addListener('zoom_changed', () => {
-          updateCameraOrientation();
-        });
+        panorama.addListener('pov_changed', () => updateCameraOrientation());
+        panorama.addListener('zoom_changed', () => updateCameraOrientation());
       }
 
       function setupThreeJS() {
         const container = document.getElementById("streetview-container");
         scene = new THREE.Scene();
         
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.9);
+        // Kraftig og godt lys fra alle kanter så modellen ikke blir mørk
+        const ambientLight = new THREE.AmbientLight(0xffffff, 1.5);
         scene.add(ambientLight);
         
-        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.7);
-        directionalLight.position.set(10, 25, 15);
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 1.0);
+        directionalLight.position.set(20, 40, 20);
         scene.add(directionalLight);
 
-        camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 1, 1000);
+        camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
         
+        // alpha: true gjør 3D-bakgrunnen gjennomsiktig så du ser Street View bak bygget
         renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+        renderer.setClearColor(0x000000, 0); // Tvinger full gjennomsiktighet
         renderer.setSize(window.innerWidth, window.innerHeight);
         renderer.domElement.style.position = 'absolute';
         renderer.domElement.style.top = '0';
@@ -94,7 +106,6 @@
 
       function updateCameraOrientation() {
         if (!panorama || !camera) return;
-        
         const pov = panorama.getPov();
         if (!pov) return;
 
