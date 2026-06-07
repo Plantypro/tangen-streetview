@@ -21,12 +21,12 @@
 
     <script>
       // ==========================================================
-      // GEOGRAFISKE DATA FOR PLASSERING PÅ TOMT
+      // GEOGRAFISKE DATA FOR PLASSERING PÅ TANGEN 7
       // ==========================================================
       const BYGG_GPS = { lat: 59.000340, lng: 5.659320 }; 
       
-      // GLOBALT HØYDENIVÅ: Satt til -5.0 meter for å tvinge modellen godt ned på asfalten
-      const BYGG_HØYDE = -5.0; 
+      // Vi setter denne til -15.0 for å hente modellen ordentlig ned fra himmelen
+      const BYGG_HØYDE = -15.0; 
       
       // Sann Nord-rotasjon fra Revit-kompasset ditt
       const BYGG_ROTASJON_NORD = 31.75; 
@@ -62,26 +62,26 @@
           modell.scale.set(1, 1, 1);
           
           // ==========================================================
-          // AKSE-KORRIGERING: INGEN HELLING ELLER FLIPPING PÅ SIDEN
+          // AKSE-KORRIGERING: VI ROTERER BYGGET SÅ DET LIGGER FLATT
           // ==========================================================
-          // Vi setter X og Z-rotasjon til 0 så bygget ligger helt flatt
-          modell.rotation.x = 0; 
+          // Siden "Flip YZ" var av, må vi dytte den 90 grader ned på X-aksen for å flate den ut
+          modell.rotation.x = -Math.PI / 2; 
           modell.rotation.z = 0;
           
-          // Snyr bygget kun rundt sin egen vertikale akse (Y)
+          // Snyr bygget rundt sin vertikale akse (Y)
           modell.rotation.y = THREE.MathUtils.degToRad(BYGG_ROTASJON_NORD);
 
-          // Sentrerer geometrien lokalt i (0,0,0) basert på den flate formen
+          // Sentrerer geometrien lokalt basert på den nye flate formen
           const boks = new THREE.Box3().setFromObject(modell);
           const senter = new THREE.Vector3();
           boks.getCenter(senter);
           
           modell.position.x = -senter.x;
-          modell.position.y = -boks.min.y; // Tvinger bunnen av geometrien til å starte på 0
+          modell.position.y = -boks.min.y; // Tvinger bunnen av bygget til å starte på lokal 0
           modell.position.z = -senter.z;
           
           scene.add(modell);
-          console.log("Modellen er lagt helt flat, bunnutjevnet og klar.");
+          console.log("Modellen er rettet opp, lagt flat og klargjort.");
           
           // Den røde pinnen beholdes for å verifisere posisjonen
           opprettHjelpelinje();
@@ -103,8 +103,8 @@
       function opprettHjelpelinje() {
         const materiale = new THREE.LineBasicMaterial({ color: 0xff0000 });
         const punkter = [];
-        punkter.push(new THREE.Vector3(0, -2, 0));
-        punkter.push(new THREE.Vector3(0, 20, 0)); 
+        punkter.push(new THREE.Vector3(0, -5, 0));
+        punkter.push(new THREE.Vector3(0, 30, 0)); 
         const geometri = new THREE.BufferGeometry().setFromPoints(punkter);
         const linje = new THREE.Line(geometri, materiale);
         scene.add(linje);
