@@ -2,7 +2,7 @@
 <html>
   <head>
     <meta charset="utf-8">
-    <title>Tangen 7 - Høyderegulert Street View</title>
+    <title>Tangen 7 - Senket Grunnflate</title>
     <style>
       html, body, #streetview-container { 
         height: 100%; 
@@ -23,10 +23,10 @@
       // ==========================================================
       // GEOGRAFISKE DATA FRA REVIT (TANGEN 7)
       // ==========================================================
-      const BYGG_GPS = { lat: 59.000300, lng: 5.659350 }; 
+      const BYGG_GPS = { lat: 59.000320, lng: 5.659300 }; 
       
-      // SENKET HØYDE: Satt til -12.0 meter for å tvinge bygget solid ned på jorda
-      const BYGG_HØYDE = -12.0; 
+      // KRAFTIG SENKET: Satt til -35 meter for å tvinge alt det hvite under bakken
+      const BYGG_HØYDE = -35.0; 
       
       const BYGG_ROTASJON_NORD = 31.75; 
 
@@ -61,16 +61,16 @@
           
           bygningsGruppe = new THREE.Group();
           
-          // 1. NESTING: Vi flytter modellen til 0-punktet FØRST, uten rotasjon involvert
+          // Flytter modellen i forhold til Revit-origo
           modell.position.set(-REVIT_OFFSET_X, 0, -REVIT_OFFSET_Y);
           bygningsGruppe.add(modell);
           
-          // 2. ROTASJON: Nå vrir vi gruppen flatt rundt det korrekte hjørneankeret
+          // Ren flat rotasjon rundt aksekrysset
           bygningsGruppe.rotation.set(0, 0, 0);
           bygningsGruppe.rotation.y = THREE.MathUtils.degToRad(BYGG_ROTASJON_NORD);
           
           scene.add(bygningsGruppe);
-          console.log("Modellen er senket og akserotert flatt.");
+          console.log("Modellen er dyttet dypt ned under terrenget for klargjøring.");
           
           opprettHjelpelinje();
           oppdaterByggPlassering();
@@ -83,8 +83,8 @@
       function opprettHjelpelinje() {
         const materiale = new THREE.LineBasicMaterial({ color: 0xff0000 });
         const punkter = [];
-        punkter.push(new THREE.Vector3(0, -10, 0));
-        punkter.push(new THREE.Vector3(0, 30, 0)); 
+        punkter.push(new THREE.Vector3(0, -40, 0));
+        punkter.push(new THREE.Vector3(0, 40, 0)); 
         const geometri = new THREE.BufferGeometry().setFromPoints(punkter);
         const linje = new THREE.Line(geometri, materiale);
         scene.add(linje);
@@ -102,7 +102,7 @@
         const meterNord = dLat * R;
         const meterØst = dLng * R * Math.cos(THREE.MathUtils.degToRad(kamPos.lat()));
 
-        // Plasserer gruppen stabilt i 3D-scenen
+        // Posisjonerer modellen i 3D-rommet
         bygningsGruppe.position.set(meterØst, BYGG_HØYDE, -meterNord);
         
         updateCameraOrientation();
@@ -139,14 +139,3 @@
           panorama.addListener('position_changed', () => oppdaterByggPlassering());
           panorama.addListener('pov_changed', () => updateCameraOrientation());
           panorama.addListener('zoom_changed', () => updateCameraOrientation());
-        }
-      }
-
-      function updateCameraOrientation() {
-        if (!panorama || !camera) return;
-        const pov = panorama.getPov();
-        if (!pov) return;
-
-        camera.rotation.set(THREE.MathUtils.degToRad(pov.pitch || 0), -THREE.MathUtils.degToRad(pov.heading || 0), 0, 'YXZ');
-        camera.fov = 180 / Math.pow(2, panorama.getZoom() || 1);
-        camera.updateProjectionMatrix();
